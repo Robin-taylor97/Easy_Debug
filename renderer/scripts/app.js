@@ -3,6 +3,9 @@ const TerminalManager = require('../../terminal/terminal.js');
 const fs = require('fs');
 const path = require('path');
 
+// Import renderer logger
+const logger = require('../../utils/renderer-logger');
+
 class InputValidator {
     static validateRequired(value, fieldName) {
         if (!value || value.trim() === '') {
@@ -73,6 +76,13 @@ class InputValidator {
 
 class EasyDebugApp {
     constructor() {
+        logger.info('EasyDebugApp constructor started', {
+            timestamp: new Date().toISOString(),
+            userAgent: navigator.userAgent
+        }, 'app-init');
+
+        const timer = logger.startTimer('app-initialization');
+
         this.terminalManager = new TerminalManager();
         this.currentProject = null;
         this.currentTheme = 'dark';
@@ -84,71 +94,137 @@ class EasyDebugApp {
         this.commandHistory = [];
         this.filteredHistory = [];
         this.isHistoryVisible = false;
-        
-        this.init();
+
+        logger.info('App properties initialized', {
+            terminalCounter: this.terminalCounter,
+            activeTerminalsSize: this.activeTerminals.size,
+            currentTheme: this.currentTheme
+        }, 'app-init');
+
+        this.init().then(() => {
+            logger.endTimer(timer, { success: true });
+            logger.info('EasyDebugApp fully initialized', {}, 'app-init');
+        }).catch(error => {
+            logger.error('Error during app initialization', error, {}, 'app-init');
+            logger.endTimer(timer, { success: false, error: error.message });
+        });
     }
 
     async init() {
-        this.setupErrorHandling();
-        await this.loadTheme();
-        this.setupEventListeners();
-        this.setupTerminal();
-        this.loadRecentProjects();
-        this.loadCustomCommands();
-        this.loadCommandHistory();
-        this.setupResizer();
-        this.refreshSystemVersions();
+        logger.info('Starting app initialization sequence', {}, 'app-init');
+
+        try {
+            logger.debug('Setting up error handling', {}, 'app-init');
+            this.setupErrorHandling();
+
+            logger.debug('Loading theme', {}, 'app-init');
+            await this.loadTheme();
+
+            logger.debug('Setting up event listeners', {}, 'app-init');
+            this.setupEventListeners();
+
+            logger.debug('Setting up terminal', {}, 'app-init');
+            this.setupTerminal();
+
+            logger.debug('Loading recent projects', {}, 'app-init');
+            this.loadRecentProjects();
+
+            logger.debug('Loading custom commands', {}, 'app-init');
+            this.loadCustomCommands();
+
+            logger.debug('Loading command history', {}, 'app-init');
+            this.loadCommandHistory();
+
+            logger.debug('Setting up resizer', {}, 'app-init');
+            this.setupResizer();
+
+            logger.debug('Refreshing system versions', {}, 'app-init');
+            this.refreshSystemVersions();
+
+            logger.info('App initialization sequence completed', {}, 'app-init');
+        } catch (error) {
+            logger.error('Error in init sequence', error, {}, 'app-init');
+            throw error;
+        }
     }
 
     setupErrorHandling() {
+        logger.info('Setting up error handling', {}, 'error-handling');
+
         // Global error handler for uncaught exceptions
         window.addEventListener('error', (event) => {
-            console.error('Uncaught error in renderer process:', event.error);
+            logger.error('Uncaught error in renderer process', event.error, {
+                filename: event.filename,
+                lineno: event.lineno,
+                colno: event.colno,
+                message: event.message
+            }, 'error-handling');
             this.showNotification('An unexpected error occurred', 'error');
         });
 
         // Global handler for unhandled promise rejections
         window.addEventListener('unhandledrejection', (event) => {
-            console.error('Unhandled promise rejection in renderer process:', event.reason);
+            logger.error('Unhandled promise rejection in renderer process', event.reason, {
+                promise: event.promise.toString()
+            }, 'error-handling');
             this.showNotification('An operation failed unexpectedly', 'error');
         });
 
         // IPC error handler
         process.on('uncaughtException', (error) => {
-            console.error('Uncaught exception in renderer process:', error);
+            logger.error('Uncaught exception in renderer process', error, {
+                location: 'process-uncaught-exception'
+            }, 'error-handling');
         });
+
+        logger.info('Error handling setup completed', {}, 'error-handling');
     }
 
     async loadTheme() {
+        const timer = logger.startTimer('load-theme');
+        logger.debug('Loading theme from storage', {}, 'theme');
+
         try {
             this.currentTheme = await ipcRenderer.invoke('get-theme');
+            logger.info('Theme loaded successfully', { theme: this.currentTheme }, 'theme');
             this.applyTheme(this.currentTheme);
+            logger.endTimer(timer, { success: true, theme: this.currentTheme });
         } catch (error) {
-            console.error('Error loading theme:', error);
+            logger.error('Error loading theme', error, {}, 'theme');
             this.currentTheme = 'dark'; // fallback to dark theme
             this.applyTheme(this.currentTheme);
             this.showNotification('Failed to load theme, using default', 'warning');
+            logger.endTimer(timer, { success: false, fallbackTheme: 'dark' });
         }
     }
 
     applyTheme(theme) {
+        logger.themeOperation('apply-theme', { theme, previousTheme: this.currentTheme });
+
         const body = document.body;
         const themeToggle = document.getElementById('theme-toggle');
-        
+
         if (theme === 'light') {
             body.classList.add('light-theme');
             themeToggle.textContent = '☀️';
+            logger.debug('Applied light theme', { bodyClasses: body.className }, 'theme');
         } else {
             body.classList.remove('light-theme');
             themeToggle.textContent = '🌙';
+            logger.debug('Applied dark theme', { bodyClasses: body.className }, 'theme');
         }
-        
+
         // Update terminal theme
         if (this.terminalManager) {
+            logger.debug('Updating terminal theme', { theme }, 'theme');
             this.terminalManager.updateTheme(theme);
         }
-        
+
         this.currentTheme = theme;
+        logger.info('Theme applied successfully', {
+            newTheme: theme,
+            terminalUpdated: !!this.terminalManager
+        }, 'theme');
     }
 
     setupEventListeners() {
@@ -329,28 +405,58 @@ class EasyDebugApp {
     }
 
     async toggleTheme() {
+        const oldTheme = this.currentTheme;
         const newTheme = this.currentTheme === 'dark' ? 'light' : 'dark';
+
+        logger.userAction('theme-toggle', {
+            oldTheme,
+            newTheme
+        }, document.getElementById('theme-toggle'));
+
+        const timer = logger.startTimer('theme-toggle');
+
         try {
             await ipcRenderer.invoke('set-theme', newTheme);
             this.applyTheme(newTheme);
             this.showToast('Theme updated', 'success');
+
+            logger.endTimer(timer, { success: true, theme: newTheme });
+            logger.themeOperation('theme-toggled', { oldTheme, newTheme });
         } catch (error) {
+            logger.error('Error updating theme', error, { attemptedTheme: newTheme }, 'theme');
             this.showToast('Error updating theme', 'error');
+            logger.endTimer(timer, { success: false, error: error.message });
         }
     }
 
     async selectProjectFolder() {
+        logger.userAction('select-project-folder', {}, document.getElementById('select-folder-btn'));
+        const timer = logger.startTimer('select-project-folder');
+
         try {
+            logger.debug('Opening folder selection dialog', {}, 'project');
             const folderPath = await ipcRenderer.invoke('select-folder');
+
             if (folderPath) {
+                logger.projectOperation('folder-selected', folderPath, {
+                    hasCurrentProject: !!this.currentProject,
+                    previousProject: this.currentProject
+                });
+
                 this.setCurrentProject(folderPath);
                 this.detectProjectType(folderPath);
                 this.loadRecentProjects();
                 this.showToast('Project folder selected', 'success');
+
+                logger.endTimer(timer, { success: true, projectSelected: true });
+            } else {
+                logger.info('Project folder selection cancelled', {}, 'project');
+                logger.endTimer(timer, { success: true, projectSelected: false });
             }
         } catch (error) {
-            console.error('Error selecting folder:', error);
+            logger.error('Error selecting folder', error, {}, 'project');
             this.showToast(`Error selecting folder: ${error.message}`, 'error');
+            logger.endTimer(timer, { success: false, error: error.message });
         }
     }
 
@@ -445,21 +551,51 @@ class EasyDebugApp {
     }
 
     executeCommand(command) {
+        logger.userAction('execute-command', {
+            command,
+            hasProject: !!this.currentProject,
+            project: this.currentProject ? path.basename(this.currentProject) : null
+        });
+
+        const timer = logger.startTimer('execute-command');
+
         if (!this.currentProject) {
+            logger.warn('Command execution attempted without project', { command }, 'command');
             this.showToast('Please select a project folder first', 'warning');
+            logger.endTimer(timer, { success: false, reason: 'no-project' });
             return;
         }
+
+        logger.commandExecution(command, this.currentProject, {
+            terminalCount: this.activeTerminals.size
+        });
 
         // Add to command history
         this.addToCommandHistory(command, this.currentProject);
 
         // Change to project directory first, then execute command
         const fullCommand = `cd "${this.currentProject}" && ${command}`;
-        
+
+        logger.debug('Executing command in terminal', {
+            command,
+            fullCommand,
+            projectPath: this.currentProject
+        }, 'command');
+
         if (this.terminalManager.executeCommand(fullCommand)) {
             this.showToast(`Executing: ${command}`, 'info');
+            logger.info('Command sent to terminal successfully', {
+                command,
+                project: path.basename(this.currentProject)
+            }, 'command');
+            logger.endTimer(timer, { success: true });
         } else {
+            logger.error('No active terminal found for command execution', null, {
+                command,
+                activeTerminals: this.activeTerminals.size
+            }, 'command');
             this.showToast('No active terminal found', 'error');
+            logger.endTimer(timer, { success: false, reason: 'no-terminal' });
         }
     }
 
@@ -1275,7 +1411,26 @@ class EasyDebugApp {
     }
 }
 
+// Make classes available globally for webpack
+window.EasyDebugApp = EasyDebugApp;
+window.InputValidator = InputValidator;
+
 // Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new EasyDebugApp();
+    console.log('DOM loaded, initializing EasyDebugApp...');
+    const app = new EasyDebugApp();
+    window.easyDebugApp = app; // Store reference globally for debugging
+    console.log('EasyDebugApp initialized successfully');
 });
+
+// Also try to initialize immediately if DOM is already loaded
+if (document.readyState === 'loading') {
+    // DOM is still loading, wait for DOMContentLoaded
+    console.log('DOM still loading, waiting...');
+} else {
+    // DOM is already loaded
+    console.log('DOM already loaded, initializing immediately...');
+    const app = new EasyDebugApp();
+    window.easyDebugApp = app;
+    console.log('EasyDebugApp initialized immediately');
+}

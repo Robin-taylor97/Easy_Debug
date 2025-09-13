@@ -351,44 +351,7 @@
         </div>
     </div>
 
-    <script>
-        console.log('Inline script loading...');
-        
-        // Test basic functionality first
-        document.addEventListener('DOMContentLoaded', () => {
-            console.log('DOM loaded with inline script');
-            
-            // Test folder picker button
-            const folderBtn = document.getElementById('select-folder-btn');
-            if (folderBtn) {
-                console.log('Folder button found');
-                folderBtn.addEventListener('click', () => {
-                    console.log('Folder button clicked!');
-                    alert('Folder button works!');
-                });
-            }
-            
-            // Test theme toggle
-            const themeBtn = document.getElementById('theme-toggle');
-            if (themeBtn) {
-                console.log('Theme button found');
-                themeBtn.addEventListener('click', () => {
-                    console.log('Theme button clicked!');
-                    alert('Theme button works!');
-                });
-            }
-            
-            // Test command buttons
-            const commandBtns = document.querySelectorAll('.command-btn');
-            console.log('Found', commandBtns.length, 'command buttons');
-            commandBtns.forEach((btn, index) => {
-                btn.addEventListener('click', () => {
-                    console.log('Command button', index, 'clicked');
-                    alert('Command button ' + index + ' works!');
-                });
-            });
-        });
-    </script>
-    <script src="scripts/app.js"></script>
+    <script src="../dist/renderer/vendor.bundle.js"></script>
+    <script src="../dist/renderer/app.bundle.js"></script>
 </body>
 </html>

@@ -1,0 +1,18 @@
+{
+  "presets": [
+    [
+      "@babel/preset-env",
+      {
+        "targets": {
+          "electron": "28.0.0"
+        },
+        "useBuiltIns": "usage",
+        "corejs": 3,
+        "modules": false
+      }
+    ]
+  ],
+  "plugins": [
+    "@babel/plugin-transform-runtime"
+  ]
+}

@@ -4,289 +4,416 @@ const Store = require('electron-store');
 const fs = require('fs');
 const os = require('os');
 
+// Import centralized logger
+const logger = require('./utils/logger');
+
 const store = new Store();
 
-// Global error handling for main process
+// Log application startup
+logger.appLifecycle('application-starting', {
+  electronVersion: process.versions.electron,
+  nodeVersion: process.version,
+  platform: process.platform,
+  arch: process.arch,
+  isDev: process.argv.includes('--dev')
+});
+
+// Enhanced global error handling for main process
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception in main process:', error);
-  logError(error, 'uncaughtException');
-  
+  logger.error('Uncaught Exception in main process', error, {
+    location: 'main-process',
+    fatal: true
+  }, 'error');
+
   // Show error dialog to user
   if (mainWindow && !mainWindow.isDestroyed()) {
-    dialog.showErrorBox('Unexpected Error', 
+    dialog.showErrorBox('Unexpected Error',
       `An unexpected error occurred: ${error.message}\n\nThe application will continue running, but you may want to restart it.`);
   }
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection in main process:', reason);
-  logError(reason, 'unhandledRejection');
+  logger.error('Unhandled Promise Rejection in main process', reason, {
+    location: 'main-process',
+    promise: promise.toString()
+  }, 'error');
 });
 
-// Error logging function
+// Legacy error logging function (kept for backward compatibility)
 function logError(error, type = 'error') {
-  try {
-    const errorLog = {
-      timestamp: new Date().toISOString(),
-      type: type,
-      message: error.message || String(error),
-      stack: error.stack || 'No stack trace',
-      platform: process.platform,
-      nodeVersion: process.version,
-      electronVersion: process.versions.electron
-    };
-
-    const logDir = path.join(os.homedir(), '.easy-debug', 'logs');
-    if (!fs.existsSync(logDir)) {
-      fs.mkdirSync(logDir, { recursive: true });
-    }
-
-    const logFile = path.join(logDir, 'error.log');
-    const logEntry = JSON.stringify(errorLog) + '\n';
-    
-    fs.appendFileSync(logFile, logEntry);
-  } catch (logError) {
-    console.error('Failed to log error:', logError);
-  }
+  logger.error(`Legacy log: ${type}`, error, { legacyCall: true }, 'legacy');
 }
 
 let mainWindow;
 let isDev = process.argv.includes('--dev');
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 1000,
-    minHeight: 600,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      enableRemoteModule: true
-    },
-    titleBarStyle: 'default',
-    show: false,
-    icon: path.join(__dirname, 'assets', 'icon.png')
-  });
+  const timer = logger.startTimer('create-window');
 
-  mainWindow.loadFile('renderer/index.html');
-
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show();
-    
-    if (isDev) {
-      mainWindow.webContents.openDevTools();
+  logger.appLifecycle('creating-main-window', {
+    windowConfig: {
+      width: 1400,
+      height: 900,
+      minWidth: 1000,
+      minHeight: 600
     }
   });
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-  });
+  try {
+    mainWindow = new BrowserWindow({
+      width: 1400,
+      height: 900,
+      minWidth: 1000,
+      minHeight: 600,
+      webPreferences: {
+        nodeIntegration: true,
+        contextIsolation: false,
+        enableRemoteModule: true
+      },
+      titleBarStyle: 'default',
+      show: false,
+      icon: path.join(__dirname, 'assets', 'icon.png')
+    });
 
-  setupIpcHandlers();
+    logger.info('BrowserWindow created successfully', {
+      windowId: mainWindow.id,
+      webContentsId: mainWindow.webContents.id
+    }, 'window');
+
+    mainWindow.loadFile('renderer/index.html');
+    logger.info('Loading renderer/index.html', {}, 'window');
+
+    mainWindow.once('ready-to-show', () => {
+      logger.appLifecycle('window-ready-to-show');
+      mainWindow.show();
+
+      if (isDev) {
+        logger.info('Opening DevTools (development mode)', {}, 'development');
+        mainWindow.webContents.openDevTools();
+      }
+
+      logger.endTimer(timer, { windowVisible: true });
+    });
+
+    mainWindow.on('closed', () => {
+      logger.appLifecycle('main-window-closed');
+      mainWindow = null;
+    });
+
+    // Log window events
+    mainWindow.on('focus', () => logger.debug('Main window focused', {}, 'window'));
+    mainWindow.on('blur', () => logger.debug('Main window blurred', {}, 'window'));
+    mainWindow.on('minimize', () => logger.info('Main window minimized', {}, 'window'));
+    mainWindow.on('maximize', () => logger.info('Main window maximized', {}, 'window'));
+    mainWindow.on('restore', () => logger.info('Main window restored', {}, 'window'));
+
+    setupIpcHandlers();
+
+  } catch (error) {
+    logger.error('Failed to create main window', error, {
+      location: 'createWindow'
+    }, 'error');
+    throw error;
+  }
 }
 
 function setupIpcHandlers() {
+  logger.info('Setting up IPC handlers', {}, 'ipc');
+
   ipcMain.handle('select-folder', async () => {
+    const timer = logger.startTimer('select-folder-dialog');
+    logger.ipcOperation('handle', 'select-folder', {}, 'renderer-to-main');
+
     try {
       if (!mainWindow || mainWindow.isDestroyed()) {
         throw new Error('Main window is not available');
       }
 
+      logger.debug('Opening folder selection dialog', {}, 'dialog');
       const result = await dialog.showOpenDialog(mainWindow, {
         properties: ['openDirectory']
       });
-      
+
       if (!result.canceled && result.filePaths.length > 0) {
         const folderPath = result.filePaths[0];
-        
+
+        logger.projectOperation('folder-selected', folderPath, {
+          dialogResult: { canceled: result.canceled, pathCount: result.filePaths.length }
+        });
+
         // Validate folder path
         if (!fs.existsSync(folderPath)) {
           throw new Error(`Selected folder does not exist: ${folderPath}`);
         }
-        
+
         const recentProjects = store.get('recentProjects', []);
         const updatedProjects = [folderPath, ...recentProjects.filter(p => p !== folderPath)].slice(0, 10);
         store.set('recentProjects', updatedProjects);
-        
+
+        logger.info('Recent projects updated', {
+          newProject: path.basename(folderPath),
+          totalRecentProjects: updatedProjects.length
+        }, 'project');
+
+        logger.endTimer(timer, { success: true, folderSelected: true });
         return folderPath;
       }
-      
+
+      logger.info('Folder selection canceled by user', {}, 'dialog');
+      logger.endTimer(timer, { success: true, folderSelected: false });
       return null;
     } catch (error) {
-      console.error('Error in select-folder handler:', error);
-      logError(error, 'select-folder-handler');
+      logger.error('Error in select-folder handler', error, {
+        location: 'select-folder-ipc'
+      }, 'ipc');
+      logger.endTimer(timer, { success: false, error: error.message });
       throw error;
     }
   });
 
   ipcMain.handle('get-recent-projects', async () => {
+    logger.ipcOperation('handle', 'get-recent-projects', {}, 'renderer-to-main');
+
     try {
       const recentProjects = store.get('recentProjects', []);
-      
+      logger.debug('Retrieved recent projects from store', {
+        count: recentProjects.length
+      }, 'project');
+
       // Validate that all projects still exist
       const validProjects = recentProjects.filter(projectPath => {
         try {
-          return fs.existsSync(projectPath);
+          const exists = fs.existsSync(projectPath);
+          if (!exists) {
+            logger.warn('Project path no longer exists', {
+              path: projectPath,
+              basename: path.basename(projectPath)
+            }, 'project');
+          }
+          return exists;
         } catch (error) {
-          console.warn(`Cannot access project path: ${projectPath}`, error);
+          logger.warn('Cannot access project path', error, {
+            path: projectPath
+          }, 'project');
           return false;
         }
       });
-      
+
       // Update store if some projects were removed
       if (validProjects.length !== recentProjects.length) {
+        const removedCount = recentProjects.length - validProjects.length;
         store.set('recentProjects', validProjects);
+        logger.info('Cleaned up recent projects', {
+          removedCount,
+          remainingCount: validProjects.length
+        }, 'project');
       }
-      
+
+      logger.info('Recent projects retrieved', {
+        count: validProjects.length
+      }, 'project');
+
       return validProjects;
     } catch (error) {
-      console.error('Error in get-recent-projects handler:', error);
-      logError(error, 'get-recent-projects-handler');
+      logger.error('Error in get-recent-projects handler', error, {
+        location: 'get-recent-projects-ipc'
+      }, 'ipc');
       return [];
     }
   });
 
   ipcMain.handle('open-in-editor', async (event, projectPath, editor = 'code') => {
     const { spawn } = require('child_process');
-    
+    logger.ipcOperation('handle', 'open-in-editor', { editor, projectPath: path.basename(projectPath || '') }, 'renderer-to-main');
+
     try {
       // Input validation
       if (!projectPath || typeof projectPath !== 'string') {
         throw new Error('Invalid project path provided');
       }
-      
+
       if (!fs.existsSync(projectPath)) {
         throw new Error(`Project path does not exist: ${projectPath}`);
       }
-      
+
       if (!['code', 'studio', 'explorer'].includes(editor)) {
-        console.warn(`Unknown editor type: ${editor}, defaulting to file explorer`);
+        logger.warn('Unknown editor type, defaulting to file explorer', {
+          requestedEditor: editor,
+          defaultEditor: 'explorer'
+        }, 'editor');
         editor = 'explorer';
       }
+
+      logger.info(`Opening project in ${editor}`, {
+        editor,
+        project: path.basename(projectPath),
+        platform: process.platform
+      }, 'editor');
+
       switch (editor) {
         case 'code':
           // Try to open in VS Code
           try {
             spawn('code', [projectPath], { detached: true });
+            logger.info('Successfully launched VS Code', { projectPath: path.basename(projectPath) }, 'editor');
             return { success: true, message: 'Opening in VS Code' };
           } catch (codeError) {
-            // Fallback to file explorer if VS Code not found
+            logger.warn('VS Code not available, falling back to file explorer', codeError, { projectPath: path.basename(projectPath) }, 'editor');
             await shell.openPath(projectPath);
             return { success: true, message: 'VS Code not found, opened in file explorer' };
           }
-          
+
         case 'studio':
           // Try to open in Android Studio
-          const studioPath = process.platform === 'win32' 
-            ? 'studio64.exe' 
-            : process.platform === 'darwin' 
-              ? 'studio' 
+          const studioPath = process.platform === 'win32'
+            ? 'studio64.exe'
+            : process.platform === 'darwin'
+              ? 'studio'
               : 'android-studio';
-          
+
           try {
             spawn(studioPath, [projectPath], { detached: true });
+            logger.info('Successfully launched Android Studio', { projectPath: path.basename(projectPath), studioPath }, 'editor');
             return { success: true, message: 'Opening in Android Studio' };
           } catch (studioError) {
+            logger.warn('Android Studio not available, falling back to file explorer', studioError, { projectPath: path.basename(projectPath) }, 'editor');
             await shell.openPath(projectPath);
             return { success: true, message: 'Android Studio not found, opened in file explorer' };
           }
-          
+
         case 'explorer':
           await shell.openPath(projectPath);
+          logger.info('Opened project in file explorer', { projectPath: path.basename(projectPath) }, 'editor');
           return { success: true, message: 'Opened in file explorer' };
-          
+
         default:
           await shell.openPath(projectPath);
+          logger.info('Opened project in default application', { projectPath: path.basename(projectPath) }, 'editor');
           return { success: true, message: 'Opened in default application' };
       }
     } catch (error) {
-      console.error('Error in open-in-editor handler:', error);
-      logError(error, 'open-in-editor-handler');
+      logger.error('Error in open-in-editor handler', error, {
+        location: 'open-in-editor-ipc',
+        editor,
+        projectPath: projectPath ? path.basename(projectPath) : 'undefined'
+      }, 'ipc');
       return { success: false, error: error.message };
     }
   });
 
   ipcMain.handle('get-theme', async () => {
+    logger.ipcOperation('handle', 'get-theme', {}, 'renderer-to-main');
+
     try {
       const theme = store.get('theme', 'dark');
-      
+
       // Validate theme value
       if (!['light', 'dark'].includes(theme)) {
-        console.warn(`Invalid theme value: ${theme}, defaulting to dark`);
+        logger.warn('Invalid theme value, defaulting to dark', {
+          invalidTheme: theme,
+          defaultTheme: 'dark'
+        }, 'theme');
         return 'dark';
       }
-      
+
+      logger.debug('Theme retrieved from store', { theme }, 'theme');
       return theme;
     } catch (error) {
-      console.error('Error in get-theme handler:', error);
-      logError(error, 'get-theme-handler');
+      logger.error('Error in get-theme handler', error, {
+        location: 'get-theme-ipc'
+      }, 'ipc');
       return 'dark';
     }
   });
 
   ipcMain.handle('set-theme', async (event, theme) => {
+    logger.ipcOperation('handle', 'set-theme', { theme }, 'renderer-to-main');
+
     try {
       // Input validation
       if (!theme || !['light', 'dark'].includes(theme)) {
         throw new Error(`Invalid theme value: ${theme}. Must be 'light' or 'dark'`);
       }
-      
+
+      const previousTheme = store.get('theme', 'dark');
       store.set('theme', theme);
+
+      logger.info('Theme updated', {
+        previousTheme,
+        newTheme: theme,
+        changed: previousTheme !== theme
+      }, 'theme');
+
       return theme;
     } catch (error) {
-      console.error('Error in set-theme handler:', error);
-      logError(error, 'set-theme-handler');
+      logger.error('Error in set-theme handler', error, {
+        location: 'set-theme-ipc',
+        requestedTheme: theme
+      }, 'ipc');
       throw error;
     }
   });
 
   ipcMain.handle('minimize-window', async () => {
+    logger.ipcOperation('handle', 'minimize-window', {}, 'renderer-to-main');
+
     try {
       if (!mainWindow || mainWindow.isDestroyed()) {
         throw new Error('Main window is not available for minimizing');
       }
-      
+
       mainWindow.minimize();
+      logger.info('Main window minimized', {}, 'window');
       return { success: true };
     } catch (error) {
-      console.error('Error in minimize-window handler:', error);
-      logError(error, 'minimize-window-handler');
+      logger.error('Error in minimize-window handler', error, {
+        location: 'minimize-window-ipc'
+      }, 'ipc');
       return { success: false, error: error.message };
     }
   });
 
   ipcMain.handle('maximize-window', async () => {
+    logger.ipcOperation('handle', 'maximize-window', {}, 'renderer-to-main');
+
     try {
       if (!mainWindow || mainWindow.isDestroyed()) {
         throw new Error('Main window is not available for maximizing');
       }
-      
-      if (mainWindow.isMaximized()) {
+
+      const wasMaximized = mainWindow.isMaximized();
+      if (wasMaximized) {
         mainWindow.unmaximize();
+        logger.info('Main window unmaximized', {}, 'window');
       } else {
         mainWindow.maximize();
+        logger.info('Main window maximized', {}, 'window');
       }
-      
+
       return { success: true, maximized: mainWindow.isMaximized() };
     } catch (error) {
-      console.error('Error in maximize-window handler:', error);
-      logError(error, 'maximize-window-handler');
+      logger.error('Error in maximize-window handler', error, {
+        location: 'maximize-window-ipc'
+      }, 'ipc');
       return { success: false, error: error.message };
     }
   });
 
   ipcMain.handle('close-window', async () => {
+    logger.ipcOperation('handle', 'close-window', {}, 'renderer-to-main');
+
     try {
       if (!mainWindow || mainWindow.isDestroyed()) {
         throw new Error('Main window is not available for closing');
       }
-      
+
+      logger.info('Closing main window via IPC', {}, 'window');
       mainWindow.close();
       return { success: true };
     } catch (error) {
-      console.error('Error in close-window handler:', error);
-      logError(error, 'close-window-handler');
+      logger.error('Error in close-window handler', error, {
+        location: 'close-window-ipc'
+      }, 'ipc');
       return { success: false, error: error.message };
     }
   });
@@ -513,25 +640,111 @@ function setupIpcHandlers() {
       return { success: false, error: error.message };
     }
   });
+
+  // Add IPC handler for renderer process logs
+  ipcMain.handle('log-message', async (event, logData) => {
+    try {
+      const { level, message, data, error } = logData;
+
+      // Forward renderer log to main process logger
+      switch (level) {
+        case 'debug':
+          logger.debug(`[RENDERER] ${message}`, data, data.category || 'renderer');
+          break;
+        case 'info':
+          logger.info(`[RENDERER] ${message}`, data, data.category || 'renderer');
+          break;
+        case 'warn':
+          logger.warn(`[RENDERER] ${message}`, data, data.category || 'renderer');
+          break;
+        case 'error':
+          logger.error(`[RENDERER] ${message}`, error, data, data.category || 'renderer');
+          break;
+        default:
+          logger.info(`[RENDERER] ${message}`, data, data.category || 'renderer');
+      }
+
+      return { success: true };
+    } catch (logError) {
+      console.error('Error processing renderer log:', logError);
+      return { success: false, error: logError.message };
+    }
+  });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  logger.appLifecycle('app-ready', {
+    versions: process.versions,
+    resourcesPath: process.resourcesPath,
+    execPath: process.execPath
+  });
+  logger.systemInfo();
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
+  logger.appLifecycle('window-all-closed', {
+    platform: process.platform,
+    willQuit: process.platform !== 'darwin'
+  });
+
   if (process.platform !== 'darwin') {
+    logger.appLifecycle('app-quitting', { reason: 'window-all-closed' });
     app.quit();
   }
 });
 
 app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
+  const windowCount = BrowserWindow.getAllWindows().length;
+  logger.appLifecycle('app-activate', {
+    existingWindows: windowCount,
+    willCreateWindow: windowCount === 0
+  });
+
+  if (windowCount === 0) {
     createWindow();
   }
 });
 
 app.on('before-quit', () => {
+  logger.appLifecycle('before-quit', {
+    hasMainWindow: !!mainWindow,
+    uptime: process.uptime()
+  });
+
   if (mainWindow) {
     mainWindow.removeAllListeners('close');
     mainWindow.close();
   }
+});
+
+// Additional app event logging
+app.on('ready', () => {
+  logger.appLifecycle('app-ready-event');
+});
+
+app.on('quit', (event, exitCode) => {
+  logger.appLifecycle('app-quit', {
+    exitCode,
+    uptime: process.uptime(),
+    memoryUsage: process.memoryUsage()
+  });
+});
+
+// Log unhandled browser window crashes
+app.on('render-process-gone', (event, webContents, details) => {
+  logger.error('Render process gone', null, {
+    reason: details.reason,
+    exitCode: details.exitCode,
+    webContentsId: webContents.id
+  }, 'crash');
+});
+
+app.on('child-process-gone', (event, details) => {
+  logger.error('Child process gone', null, {
+    type: details.type,
+    reason: details.reason,
+    exitCode: details.exitCode,
+    name: details.name
+  }, 'crash');
 });

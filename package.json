@@ -7,17 +7,22 @@
     "start": "electron .",
     "dev": "nodemon",
     "dev:direct": "electron . --dev",
-    "build": "electron-builder",
-    "build:win": "electron-builder --win",
-    "build:mac": "electron-builder --mac",
-    "build:linux": "electron-builder --linux",
-    "pack": "electron-builder --dir",
-    "dist": "electron-builder",
+    "webpack": "webpack --mode development",
+    "webpack:prod": "webpack --mode production",
+    "webpack:watch": "webpack --mode development --watch",
+    "build": "npm run webpack:prod && electron-builder",
+    "build:win": "npm run webpack:prod && electron-builder --win",
+    "build:mac": "npm run webpack:prod && electron-builder --mac",
+    "build:linux": "npm run webpack:prod && electron-builder --linux",
+    "pack": "npm run webpack:prod && electron-builder --dir",
+    "dist": "npm run webpack:prod && electron-builder",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "analyze": "node tools/performance-analyzer.js",
+    "clean": "rimraf dist node_modules/.cache"
   },
   "keywords": [
     "electron",
@@ -33,18 +38,28 @@
   "author": "Easy Debug Team",
   "license": "MIT",
   "devDependencies": {
+    "@babel/core": "^7.28.4",
+    "@babel/plugin-transform-runtime": "^7.28.3",
+    "@babel/preset-env": "^7.28.3",
     "@types/jest": "^30.0.0",
     "@types/node": "^20.10.0",
+    "babel-loader": "^10.0.0",
+    "css-loader": "^7.1.2",
     "electron": "^28.0.0",
     "electron-builder": "^24.8.0",
     "electron-mock-ipc": "^0.3.12",
     "eslint": "^8.55.0",
     "jest": "^29.7.0",
     "nodemon": "^3.0.2",
-    "prettier": "^3.1.0"
+    "prettier": "^3.1.0",
+    "rimraf": "^6.0.1",
+    "style-loader": "^4.0.0",
+    "webpack": "^5.101.3",
+    "webpack-cli": "^6.0.1"
   },
   "dependencies": {
-    "chokidar": "^3.5.3",
+    "@babel/runtime": "^7.28.4",
+    "electron-log": "^5.4.3",
     "electron-store": "^8.1.0",
     "xterm": "^5.3.0",
     "xterm-addon-fit": "^0.8.0",
@@ -54,7 +69,8 @@
     "appId": "com.easydebug.app",
     "productName": "Easy Debug",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
     "files": [
       "main.js",
@@ -62,19 +78,191 @@
       "terminal/**/*",
       "config/**/*",
       "assets/**/*",
-      "package.json"
+      "package.json",
+      "!tests/**/*",
+      "!tools/**/*",
+      "!docs/**/*",
+      "!*.md",
+      "!webpack.config.js",
+      "!.babelrc",
+      "!jest.config.js"
+    ],
+    "extraMetadata": {
+      "main": "main.js"
+    },
+    "compression": "maximum",
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/sharp/**/*",
+      "**/node_modules/@img/**/*"
     ],
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "publisherName": "Easy Debug Team",
+      "requestedExecutionLevel": "asInvoker",
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "verifyUpdateCodeSignature": false,
+      "legalTrademarks": "Easy Debug™"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Easy Debug",
+      "include": "build/installer.nsh"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-Portable.${ext}"
     },
     "mac": {
-      "target": "dmg",
-      "icon": "assets/icon.icns"
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "icon": "assets/icon.icns",
+      "category": "public.app-category.developer-tools",
+      "darkModeSupport": true,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "provisioningProfile": "build/embedded.provisionprofile",
+      "artifactName": "${productName}-${version}-mac.${ext}",
+      "minimumSystemVersion": "10.15.0"
+    },
+    "dmg": {
+      "background": "assets/dmg-background.png",
+      "iconSize": 100,
+      "window": {
+        "width": 600,
+        "height": 400
+      },
+      "contents": [
+        {
+          "x": 150,
+          "y": 200,
+          "type": "file"
+        },
+        {
+          "x": 450,
+          "y": 200,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "sign": false
     },
     "linux": {
-      "target": "AppImage",
-      "icon": "assets/icon.png"
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "rpm",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.png",
+      "category": "Development",
+      "artifactName": "${productName}-${version}.${ext}",
+      "synopsis": "Cross-platform development debugging tool",
+      "description": "A modern cross-platform Electron desktop application for debugging and managing development projects",
+      "vendor": "Easy Debug Team",
+      "maintainer": "Easy Debug Team <support@easydebug.com>",
+      "desktop": {
+        "Name": "Easy Debug",
+        "Comment": "Development debugging and project management tool",
+        "Keywords": "development;debugging;terminal;git;flutter;python;web;",
+        "StartupNotify": "true",
+        "MimeType": "x-scheme-handler/easydebug;"
+      }
+    },
+    "deb": {
+      "depends": [
+        "libxss1",
+        "libgconf-2-4",
+        "libxtst6",
+        "libxrandr2",
+        "libasound2",
+        "libpangocairo-1.0-0",
+        "libatk1.0-0",
+        "libcairo-gobject2",
+        "libgtk-3-0",
+        "libgdk-pixbuf2.0-0"
+      ],
+      "recommends": [
+        "git",
+        "nodejs",
+        "npm"
+      ],
+      "packageCategory": "devel",
+      "priority": "optional"
+    },
+    "rpm": {
+      "depends": [
+        "libXScrnSaver",
+        "libxrandr",
+        "alsa-lib"
+      ],
+      "fpm": [
+        "--rpm-summary",
+        "Cross-platform development debugging tool"
+      ]
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "easy-debug-team",
+      "repo": "easy-debug",
+      "private": false
     }
   },
   "engines": {
