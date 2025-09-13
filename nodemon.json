@@ -1,0 +1,6 @@
+{
+  "watch": ["main.js", "renderer/**/*", "terminal/**/*", "config/**/*"],
+  "ext": "js,html,css,json",
+  "ignore": ["node_modules/**/*", "dist/**/*"],
+  "exec": "electron . --dev"
+}

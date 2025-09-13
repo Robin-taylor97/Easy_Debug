@@ -1,0 +1,137 @@
+# 🔹 AI Prompt for Electron App — **Easy Debug**
+
+## Role
+You are an expert full-stack developer tasked with building a **cross-platform Electron desktop app** for debugging and managing projects.  
+
+The app must have:  
+- A **modern UI** (clean, minimal, responsive, with dark/light theme).  
+- A **left-side control panel** for project tools and buttons.  
+- A **right-side resizable terminal** using `xterm.js` + `node-pty`.  
+- Support for **Flutter, Python, Web (HTML/CSS/JS), and Git commands**.  
+- Full **cross-platform support** (Windows, macOS, Linux).  
+
+---
+
+## Tech Stack
+- **Electron** (app framework, main process).  
+- **Node.js** (backend logic, command runner).  
+- **xterm.js** (terminal frontend).  
+- **node-pty** (spawn real shell processes).  
+- **HTML, CSS, JavaScript (or React/Preact)** for UI.  
+- **TailwindCSS or modern CSS framework** for styling.  
+
+---
+
+## UI / Layout Requirements
+- **Left Panel (Sidebar):**  
+  - Project picker (folder selector).  
+  - Command buttons grouped by category (Flutter, Python, Web, Git, Utilities).  
+  - Collapsible groups with **icons** + labels.  
+  - Hover tooltips explaining each button.  
+  - Clean spacing, rounded buttons, subtle hover animations.  
+
+- **Right Panel:**  
+  - Full-height **embedded terminal**.  
+  - **Tabs** support (multiple terminal sessions).  
+  - Resizable divider between panels.  
+
+- **General UI:**  
+  - Dark/Light theme toggle (save user preference).  
+  - Modern typography, clean colors, smooth transitions.  
+  - Responsive design, scales well on all screen sizes.  
+
+---
+
+## Core Features
+
+### 1. Project Management
+- Folder Picker (open file dialog).  
+- Show selected folder path.  
+- Auto-detect project type:  
+  - `pubspec.yaml` → Flutter  
+  - `requirements.txt` → Python  
+  - `package.json` → Web  
+- Save & auto-load last used folder.  
+- Recent projects list.  
+- “Open in Editor” → VS Code, Android Studio, or system default editor.  
+
+---
+
+### 2. Command Shortcuts
+
+#### Flutter
+- Run in Chrome → `flutter run -d chrome --web-port 8080`  
+- Run in Emulator → `flutter run -d emulator-5554`  
+- Reset App → `flutter clean && flutter pub get`  
+- Analyze → `flutter analyze lib`  
+- Build Release → `flutter build apk`  
+
+#### Python
+- Run Script → `python main.py`  
+- Install Dependencies → `pip install -r requirements.txt`  
+- Run Tests → `pytest`  
+- Virtual Environment → toggle activate/deactivate venv  
+- Linting → `flake8` or `pylint`  
+
+#### Web (HTML/CSS/JavaScript)
+- Start Dev Server → `npm run dev`  
+- Build Project → `npm run build`  
+- Install Packages → `npm install`  
+- Run Tests → `npm test`  
+- Open in Browser → auto-detect index.html and open  
+
+#### Git
+- Git Status → `git status`  
+- Git Pull → `git pull`  
+- Git Push → `git push`  
+- Git Commit → prompt commit message, then `git add . && git commit -m "msg"`  
+- Git Checkout → dropdown of branches  
+- Git Create Branch → prompt for name  
+
+---
+
+### 3. Terminal
+- Interactive terminal using **xterm.js**.  
+- Powered by **node-pty** (spawns real shell).  
+- Starts in selected project folder.  
+- Users can type any command directly.  
+- Commands triggered by UI buttons are injected into the terminal.  
+- **Command History Panel** (searchable, re-run past commands).  
+
+---
+
+### 4. Utilities
+- **System Info Panel:** Show versions of Node, Flutter, Python, Git.  
+- **Custom Commands:** User can add/save their own command buttons.  
+- **Output Logging:** Save terminal logs per session.  
+- **Keyboard Shortcuts:** e.g., `Ctrl+R` = run, `Ctrl+Shift+C` = commit.  
+- **Notifications:** Non-blocking toasts for success/failure.  
+
+---
+
+### 5. Error Handling
+- If no folder selected → show friendly error.  
+- If dependency missing → suggest installation.  
+- If command fails → show readable error.  
+- Always display errors in terminal and toast.  
+
+---
+
+## Deliverables
+- Full Electron app codebase.  
+- Modular, well-documented structure:  
+  - `main.js` → Electron entry.  
+  - `renderer/` → UI (HTML/CSS/JS or React).  
+  - `terminal/` → xterm.js + node-pty integration.  
+- Responsive, modern UI with theme toggle.  
+- Works on Windows, macOS, Linux.  
+
+---
+
+## Goal
+Deliver a **modern developer assistant app** for debugging and project management.  
+It should feel like a **lightweight IDE companion**:  
+- Simple UI.  
+- Fast execution.  
+- Cross-language support.  
+- One-click access to common tasks.  

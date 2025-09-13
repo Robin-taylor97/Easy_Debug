@@ -1,0 +1,83 @@
+{
+  "name": "easy-debug",
+  "version": "1.0.0",
+  "description": "A modern cross-platform Electron desktop app for debugging and managing development projects",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "nodemon",
+    "dev:direct": "electron . --dev",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "build:mac": "electron-builder --mac",
+    "build:linux": "electron-builder --linux",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint .",
+    "format": "prettier --write ."
+  },
+  "keywords": [
+    "electron",
+    "development",
+    "debugging",
+    "terminal",
+    "flutter",
+    "python",
+    "web",
+    "git",
+    "cross-platform"
+  ],
+  "author": "Easy Debug Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.10.0",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.8.0",
+    "electron-mock-ipc": "^0.3.12",
+    "eslint": "^8.55.0",
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2",
+    "prettier": "^3.1.0"
+  },
+  "dependencies": {
+    "chokidar": "^3.5.3",
+    "electron-store": "^8.1.0",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0",
+    "xterm-addon-web-links": "^0.9.0"
+  },
+  "build": {
+    "appId": "com.easydebug.app",
+    "productName": "Easy Debug",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "renderer/**/*",
+      "terminal/**/*",
+      "config/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png"
+    }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
