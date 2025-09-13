@@ -22,25 +22,52 @@ class RendererLogger {
         }, 'renderer-init');
     }
 
+    // Sanitize data for IPC transmission (prevents cloning errors)
+    sanitizeForIPC(obj, depth = 0) {
+        if (depth > 3) return '[Max Depth Reached]';
+        if (obj === null || obj === undefined) return obj;
+        if (typeof obj === 'string' || typeof obj === 'number' || typeof obj === 'boolean') return obj;
+        if (obj instanceof Date) return obj.toISOString();
+        if (typeof obj === 'function') return '[Function]';
+        if (obj instanceof Error) return { message: obj.message, stack: obj.stack, name: obj.name };
+
+        if (Array.isArray(obj)) {
+            return obj.slice(0, 10).map(item => this.sanitizeForIPC(item, depth + 1));
+        }
+
+        if (typeof obj === 'object') {
+            const sanitized = {};
+            let count = 0;
+            for (const key in obj) {
+                if (count >= 20) break; // Limit object properties
+                try {
+                    sanitized[key] = this.sanitizeForIPC(obj[key], depth + 1);
+                    count++;
+                } catch (e) {
+                    sanitized[key] = '[Unserializable]';
+                }
+            }
+            return sanitized;
+        }
+
+        return String(obj);
+    }
+
     // Forward logs to main process via IPC
     async forwardToMain(level, message, data = {}, category = 'general', error = null) {
         try {
             const logData = {
                 level,
                 message,
-                data: {
+                data: this.sanitizeForIPC({
                     ...data,
                     timestamp: new Date().toISOString(),
                     category,
                     process: 'renderer',
                     url: window.location.href,
                     sessionDuration: `${((Date.now() - this.sessionStart.getTime()) / 1000).toFixed(1)}s`
-                },
-                error: error ? {
-                    message: error.message,
-                    stack: error.stack,
-                    name: error.name
-                } : null
+                }),
+                error: error ? this.sanitizeForIPC(error) : null
             };
 
             // Use IPC to send log to main process
