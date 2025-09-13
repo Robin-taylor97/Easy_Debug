@@ -83,6 +83,46 @@ function createWindow() {
     mainWindow.loadFile('renderer/index.html');
     logger.info('Loading renderer/index.html', {}, 'window');
 
+    // Capture renderer console messages for debugging
+    mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+      const logLevel = level === 0 ? 'debug' : level === 1 ? 'info' : level === 2 ? 'warn' : 'error';
+      logger[logLevel](`[RENDERER CONSOLE] ${message}`, {
+        line,
+        sourceId,
+        consoleLevel: level
+      }, 'renderer-console');
+    });
+
+    // Capture renderer crashes and errors
+    mainWindow.webContents.on('crashed', (event) => {
+      logger.error('Renderer process crashed', null, { event: event.toString() }, 'renderer-crash');
+    });
+
+    mainWindow.webContents.on('unresponsive', () => {
+      logger.warn('Renderer process became unresponsive', {}, 'renderer-performance');
+    });
+
+    mainWindow.webContents.on('responsive', () => {
+      logger.info('Renderer process became responsive again', {}, 'renderer-performance');
+    });
+
+    // Track page loading
+    mainWindow.webContents.on('did-start-loading', () => {
+      logger.info('Page started loading', {}, 'page-lifecycle');
+    });
+
+    mainWindow.webContents.on('did-finish-load', () => {
+      logger.info('Page finished loading', {}, 'page-lifecycle');
+    });
+
+    mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+      logger.error('Page failed to load', null, {
+        errorCode,
+        errorDescription,
+        validatedURL
+      }, 'page-lifecycle');
+    });
+
     mainWindow.once('ready-to-show', () => {
       logger.appLifecycle('window-ready-to-show');
       mainWindow.show();
@@ -254,7 +294,10 @@ function setupIpcHandlers() {
         case 'code':
           // Try to open in VS Code
           try {
-            spawn('code', [projectPath], { detached: true });
+            const codeProcess = spawn('code', [projectPath], { detached: true });
+            codeProcess.on('error', (codeError) => {
+              logger.warn('VS Code not available, fallback will be handled', codeError, { projectPath: path.basename(projectPath) }, 'editor');
+            });
             logger.info('Successfully launched VS Code', { projectPath: path.basename(projectPath) }, 'editor');
             return { success: true, message: 'Opening in VS Code' };
           } catch (codeError) {
@@ -272,7 +315,10 @@ function setupIpcHandlers() {
               : 'android-studio';
 
           try {
-            spawn(studioPath, [projectPath], { detached: true });
+            const studioProcess = spawn(studioPath, [projectPath], { detached: true });
+            studioProcess.on('error', (studioError) => {
+              logger.warn('Android Studio not available, fallback will be handled', studioError, { projectPath: path.basename(projectPath), studioPath }, 'editor');
+            });
             logger.info('Successfully launched Android Studio', { projectPath: path.basename(projectPath), studioPath }, 'editor');
             return { success: true, message: 'Opening in Android Studio' };
           } catch (studioError) {

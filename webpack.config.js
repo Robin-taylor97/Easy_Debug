@@ -10,7 +10,14 @@ module.exports = {
     output: {
         path: path.resolve(__dirname, 'dist/renderer'),
         filename: '[name].bundle.js',
-        clean: true
+        clean: true,
+        library: {
+            type: 'commonjs2'
+        },
+        environment: {
+            module: false,
+            dynamicImport: false
+        }
     },
     mode: process.env.NODE_ENV === 'production' ? 'production' : 'development',
     devtool: process.env.NODE_ENV === 'production' ? false : 'source-map',
@@ -22,7 +29,12 @@ module.exports = {
                 use: {
                     loader: 'babel-loader',
                     options: {
-                        presets: ['@babel/preset-env'],
+                        presets: [
+                            ['@babel/preset-env', {
+                                modules: 'commonjs',
+                                targets: { electron: '28.0.0' }
+                            }]
+                        ],
                         plugins: ['@babel/plugin-transform-runtime']
                     }
                 }
@@ -64,11 +76,11 @@ module.exports = {
         }
     },
     externals: {
-        'electron': 'require("electron")',
-        'fs': 'require("fs")',
-        'path': 'require("path")',
-        'os': 'require("os")',
-        'child_process': 'require("child_process")'
+        'electron': 'commonjs electron',
+        'fs': 'commonjs fs',
+        'path': 'commonjs path',
+        'os': 'commonjs os',
+        'child_process': 'commonjs child_process'
     },
     plugins: [
         new webpack.DefinePlugin({
