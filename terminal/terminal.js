@@ -1,7 +1,7 @@
 const { Terminal } = require('xterm');
 const { FitAddon } = require('xterm-addon-fit');
 const { WebLinksAddon } = require('xterm-addon-web-links');
-const PtyManager = require('./pty.js');
+const { ipcRenderer } = require('electron');
 
 // Import renderer logger for terminal logging
 const logger = require('../utils/renderer-logger');
@@ -21,7 +21,7 @@ class TerminalManager {
     }, 'terminal');
   }
 
-  createTerminal(containerId, workingDirectory = process.cwd()) {
+  async createTerminal(containerId, workingDirectory = process.cwd()) {
     const terminalId = `terminal-${++this.terminalCounter}`;
     const timer = logger.startTimer('create-terminal');
 
@@ -81,32 +81,318 @@ class TerminalManager {
       fitAddon.fit();
       logger.debug('Terminal opened in container', { containerId, terminalId }, 'terminal');
 
-      const ptyProcess = PtyManager.createPtyProcess(workingDirectory);
-      logger.debug('PTY process created', { terminalId, workingDirectory }, 'terminal');
+      // Create PTY process via IPC
+      const ptyResult = await ipcRenderer.invoke('create-pty', { workingDirectory });
+      if (!ptyResult.success) {
+        throw new Error(`Failed to create PTY: ${ptyResult.error}`);
+      }
 
-      terminal.onData((data) => {
+      const ptyTerminalId = ptyResult.terminalId;
+      logger.debug('PTY process created via IPC', { terminalId, ptyTerminalId, workingDirectory }, 'terminal');
+
+      // Set up PTY handlers via IPC
+      await ipcRenderer.invoke('pty-setup-handlers', { terminalId: ptyTerminalId });
+
+      // Terminal state management for cursor control
+      let inputBuffer = '';
+      let promptEndCol = 0;
+      let promptEndRow = 0;
+      let isInInputMode = false;
+
+      // Handle terminal input with cursor control - send to PTY via IPC
+      terminal.onData(async (data) => {
         logger.debug('Terminal data input', { terminalId, dataLength: data.length }, 'terminal');
-        ptyProcess.write(data);
+
+        // Handle special keys
+        const keyCode = data.charCodeAt(0);
+        const currentBuffer = terminal.buffer.active;
+        const currentRow = currentBuffer.cursorY;
+        const currentCol = currentBuffer.cursorX;
+
+        // Prevent cursor from going above prompt line
+        if (isInInputMode && currentRow < promptEndRow) {
+          terminal.write(`\x1b[${promptEndRow + 1};${promptEndCol + inputBuffer.length + 1}H`);
+          return;
+        }
+
+        // Handle Enter key (13) - submit command
+        if (keyCode === 13) {
+          inputBuffer = '';
+          isInInputMode = false;
+          try {
+            await ipcRenderer.invoke('pty-write', { terminalId: ptyTerminalId, data });
+          } catch (error) {
+            logger.error('Error writing to PTY via IPC', error, { terminalId }, 'terminal');
+          }
+          return;
+        }
+
+        // Handle Backspace (127 or 8)
+        if (keyCode === 127 || keyCode === 8) {
+          if (isInInputMode && currentCol > promptEndCol && inputBuffer.length > 0) {
+            inputBuffer = inputBuffer.slice(0, -1);
+            try {
+              await ipcRenderer.invoke('pty-write', { terminalId: ptyTerminalId, data });
+            } catch (error) {
+              logger.error('Error writing to PTY via IPC', error, { terminalId }, 'terminal');
+            }
+          }
+          return;
+        }
+
+        // Handle Arrow Keys
+        if (data === '\x1b[A' || data === '\x1b[B') { // Up/Down arrows
+          // Allow command history navigation
+          try {
+            await ipcRenderer.invoke('pty-write', { terminalId: ptyTerminalId, data });
+          } catch (error) {
+            logger.error('Error writing to PTY via IPC', error, { terminalId }, 'terminal');
+          }
+          return;
+        }
+
+        if (data === '\x1b[C' || data === '\x1b[D') { // Left/Right arrows
+          // Constrain horizontal movement to current input line
+          if (isInInputMode) {
+            if (data === '\x1b[D' && currentCol <= promptEndCol) { // Left arrow at prompt start
+              return; // Don't allow moving left past prompt
+            }
+            if (data === '\x1b[C' && currentCol >= promptEndCol + inputBuffer.length) { // Right arrow at input end
+              return; // Don't allow moving right past input
+            }
+          }
+          try {
+            await ipcRenderer.invoke('pty-write', { terminalId: ptyTerminalId, data });
+          } catch (error) {
+            logger.error('Error writing to PTY via IPC', error, { terminalId }, 'terminal');
+          }
+          return;
+        }
+
+        // Handle regular character input
+        if (keyCode >= 32 && keyCode <= 126) { // Printable characters
+          if (isInInputMode) {
+            inputBuffer += data;
+          }
+          try {
+            await ipcRenderer.invoke('pty-write', { terminalId: ptyTerminalId, data });
+          } catch (error) {
+            logger.error('Error writing to PTY via IPC', error, { terminalId }, 'terminal');
+          }
+          return;
+        }
+
+        // Handle other control characters
+        try {
+          await ipcRenderer.invoke('pty-write', { terminalId: ptyTerminalId, data });
+        } catch (error) {
+          logger.error('Error writing to PTY via IPC', error, { terminalId }, 'terminal');
+        }
       });
 
-      ptyProcess.onData((data) => {
-        logger.debug('PTY data output', { terminalId, dataLength: data.length }, 'terminal');
-        terminal.write(data);
-      });
+      // Listen for PTY data from main process
+      const ptyDataHandler = (event, { terminalId: responseTerminalId, data }) => {
+        if (responseTerminalId === ptyTerminalId) {
+          logger.debug('PTY data output', { terminalId, dataLength: data.length }, 'terminal');
 
-      ptyProcess.onExit(() => {
-        logger.info('PTY process exited', { terminalId }, 'terminal');
-        terminal.write('\r\n\x1b[31mProcess exited\x1b[0m\r\n');
-      });
+          // Detect new prompt to update cursor constraints
+          if (data.includes('>') || data.includes('$')) {
+            const buffer = terminal.buffer.active;
+            // Set input mode when we detect a new prompt
+            setTimeout(() => {
+              promptEndRow = buffer.cursorY;
+              promptEndCol = buffer.cursorX;
+              isInInputMode = true;
+              inputBuffer = '';
+            }, 10);
+          }
+
+          terminal.write(data);
+        }
+      };
+
+      // Listen for PTY exit from main process
+      const ptyExitHandler = (event, { terminalId: responseTerminalId, code, signal }) => {
+        if (responseTerminalId === ptyTerminalId) {
+          logger.info('PTY process exited', { terminalId, code, signal }, 'terminal');
+          terminal.write('\r\n\x1b[31mProcess exited\x1b[0m\r\n');
+          // Clean up listeners
+          ipcRenderer.removeListener('pty-data', ptyDataHandler);
+          ipcRenderer.removeListener('pty-exit', ptyExitHandler);
+        }
+      };
+
+      // Register IPC listeners
+      ipcRenderer.on('pty-data', ptyDataHandler);
+      ipcRenderer.on('pty-exit', ptyExitHandler);
+
+      // Add copy/paste functionality
+      const setupClipboardHandlers = () => {
+        // Handle copy operation (Ctrl+C when text is selected)
+        terminal.onSelectionChange(() => {
+          if (terminal.hasSelection()) {
+            logger.debug('Terminal text selected for copy', { terminalId }, 'terminal');
+          }
+        });
+
+        // Keyboard shortcuts handler
+        terminal.attachCustomKeyEventHandler((event) => {
+          // Handle Ctrl+C for copy (only when text is selected)
+          if (event.ctrlKey && event.key === 'c' && terminal.hasSelection()) {
+            event.preventDefault();
+            const selectedText = terminal.getSelection();
+            if (selectedText) {
+              navigator.clipboard.writeText(selectedText).then(() => {
+                logger.info('Text copied to clipboard', { terminalId, textLength: selectedText.length }, 'terminal');
+                // Clear selection after copy
+                terminal.clearSelection();
+              }).catch(error => {
+                logger.error('Failed to copy text to clipboard', error, { terminalId }, 'terminal');
+              });
+            }
+            return false;
+          }
+
+          // Handle Ctrl+V for paste
+          if (event.ctrlKey && event.key === 'v') {
+            event.preventDefault();
+            navigator.clipboard.readText().then(text => {
+              if (text && isInInputMode) {
+                // Only paste printable characters and handle line breaks
+                const sanitizedText = text.replace(/[\r\n]/g, ' ').replace(/[^\x20-\x7E]/g, '');
+                if (sanitizedText) {
+                  inputBuffer += sanitizedText;
+                  // Send text to PTY
+                  ipcRenderer.invoke('pty-write', { terminalId: ptyTerminalId, data: sanitizedText })
+                    .then(() => {
+                      logger.info('Text pasted from clipboard', { terminalId, textLength: sanitizedText.length }, 'terminal');
+                    })
+                    .catch(error => {
+                      logger.error('Failed to paste text to terminal', error, { terminalId }, 'terminal');
+                    });
+                }
+              }
+            }).catch(error => {
+              logger.error('Failed to read from clipboard', error, { terminalId }, 'terminal');
+            });
+            return false;
+          }
+
+          // Handle Ctrl+A for select all
+          if (event.ctrlKey && event.key === 'a') {
+            event.preventDefault();
+            terminal.selectAll();
+            logger.debug('Terminal select all triggered', { terminalId }, 'terminal');
+            return false;
+          }
+
+          return true;
+        });
+
+        // Add context menu for right-click copy/paste
+        const terminalElement = terminal.element;
+        if (terminalElement) {
+          terminalElement.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+
+            // Create context menu
+            const contextMenu = document.createElement('div');
+            contextMenu.className = 'terminal-context-menu';
+            contextMenu.innerHTML = `
+              <div class="context-menu-item" data-action="copy" ${!terminal.hasSelection() ? 'disabled' : ''}>Copy</div>
+              <div class="context-menu-item" data-action="paste">Paste</div>
+              <div class="context-menu-item" data-action="selectall">Select All</div>
+            `;
+
+            // Position menu
+            contextMenu.style.position = 'fixed';
+            contextMenu.style.left = event.clientX + 'px';
+            contextMenu.style.top = event.clientY + 'px';
+            contextMenu.style.zIndex = '1000';
+            contextMenu.style.background = '#2d2d30';
+            contextMenu.style.border = '1px solid #3e3e42';
+            contextMenu.style.borderRadius = '3px';
+            contextMenu.style.padding = '4px 0';
+            contextMenu.style.minWidth = '120px';
+
+            // Add menu item styles
+            const menuItems = contextMenu.querySelectorAll('.context-menu-item');
+            menuItems.forEach(item => {
+              item.style.padding = '6px 12px';
+              item.style.cursor = 'pointer';
+              item.style.color = '#cccccc';
+              item.style.fontSize = '13px';
+
+              if (item.hasAttribute('disabled')) {
+                item.style.color = '#666666';
+                item.style.cursor = 'default';
+              } else {
+                item.addEventListener('mouseover', () => {
+                  item.style.background = '#094771';
+                });
+                item.addEventListener('mouseout', () => {
+                  item.style.background = 'transparent';
+                });
+              }
+            });
+
+            document.body.appendChild(contextMenu);
+
+            // Handle menu clicks
+            contextMenu.addEventListener('click', (e) => {
+              const action = e.target.dataset.action;
+
+              if (action === 'copy' && terminal.hasSelection()) {
+                const selectedText = terminal.getSelection();
+                navigator.clipboard.writeText(selectedText);
+                terminal.clearSelection();
+              } else if (action === 'paste') {
+                navigator.clipboard.readText().then(text => {
+                  if (text && isInInputMode) {
+                    const sanitizedText = text.replace(/[\r\n]/g, ' ').replace(/[^\x20-\x7E]/g, '');
+                    if (sanitizedText) {
+                      inputBuffer += sanitizedText;
+                      ipcRenderer.invoke('pty-write', { terminalId: ptyTerminalId, data: sanitizedText });
+                    }
+                  }
+                });
+              } else if (action === 'selectall') {
+                terminal.selectAll();
+              }
+
+              document.body.removeChild(contextMenu);
+            });
+
+            // Remove menu on outside click
+            const removeMenu = (e) => {
+              if (!contextMenu.contains(e.target)) {
+                if (document.body.contains(contextMenu)) {
+                  document.body.removeChild(contextMenu);
+                }
+                document.removeEventListener('click', removeMenu);
+              }
+            };
+
+            setTimeout(() => {
+              document.addEventListener('click', removeMenu);
+            }, 10);
+          });
+        }
+      };
+
+      // Setup clipboard handlers after terminal is ready
+      setupClipboardHandlers();
 
       const terminalInstance = {
         id: terminalId,
         terminal,
         fitAddon,
-        ptyProcess,
+        ptyTerminalId,
         workingDirectory,
         isActive: false,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        ptyDataHandler,
+        ptyExitHandler
       };
 
       this.terminals.set(terminalId, terminalInstance);
@@ -166,7 +452,7 @@ class TerminalManager {
     return this.activeTerminalId ? this.terminals.get(this.activeTerminalId) : null;
   }
 
-  executeCommand(command, terminalId = null) {
+  async executeCommand(command, terminalId = null) {
     const targetId = terminalId || this.activeTerminalId;
 
     logger.terminalOperation('execute-command', {
@@ -178,9 +464,12 @@ class TerminalManager {
 
     const terminal = this.terminals.get(targetId);
 
-    if (terminal && terminal.ptyProcess) {
+    if (terminal && terminal.ptyTerminalId) {
       try {
-        terminal.ptyProcess.write(command + '\r\n');
+        await ipcRenderer.invoke('pty-write', {
+          terminalId: terminal.ptyTerminalId,
+          data: command + '\r\n'
+        });
         logger.info('Command executed in terminal', {
           command,
           terminalId: targetId,
@@ -200,19 +489,35 @@ class TerminalManager {
       command,
       terminalId: targetId,
       terminalExists: !!terminal,
-      hasPtyProcess: terminal ? !!terminal.ptyProcess : false
+      hasPtyTerminalId: terminal ? !!terminal.ptyTerminalId : false
     }, 'terminal');
 
     return false;
   }
 
-  closeTerminal(terminalId) {
+  async closeTerminal(terminalId) {
     const terminal = this.terminals.get(terminalId);
     if (terminal) {
-      terminal.ptyProcess.kill();
+      // Kill PTY process via IPC
+      if (terminal.ptyTerminalId) {
+        try {
+          await ipcRenderer.invoke('pty-kill', { terminalId: terminal.ptyTerminalId });
+        } catch (error) {
+          logger.error('Error killing PTY via IPC', error, { terminalId }, 'terminal');
+        }
+      }
+
+      // Clean up IPC listeners
+      if (terminal.ptyDataHandler) {
+        ipcRenderer.removeListener('pty-data', terminal.ptyDataHandler);
+      }
+      if (terminal.ptyExitHandler) {
+        ipcRenderer.removeListener('pty-exit', terminal.ptyExitHandler);
+      }
+
       terminal.terminal.dispose();
       this.terminals.delete(terminalId);
-      
+
       if (this.activeTerminalId === terminalId) {
         const remainingTerminals = Array.from(this.terminals.keys());
         if (remainingTerminals.length > 0) {

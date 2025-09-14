@@ -1,0 +1,1 @@
+Terminal is working properly with real shell integration!

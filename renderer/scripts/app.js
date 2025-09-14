@@ -4,7 +4,7 @@ console.log('[DEBUG] Module system check: typeof require =', typeof require);
 console.log('[DEBUG] Node environment: typeof process =', typeof process);
 
 // Test each module loading individually
-let ipcRenderer, shell, TerminalManager, fs, path, logger;
+let ipcRenderer, shell, TerminalManager, fs, path, logger, FileExplorer;
 
 console.log('[DEBUG] Loading electron module...');
 try {
@@ -124,6 +124,35 @@ try {
     console.log('[DEBUG] ✓ Fallback logger created successfully');
 }
 
+console.log('[DEBUG] Loading FileExplorer...');
+try {
+    FileExplorer = require('./file-explorer.js');
+    console.log('[DEBUG] ✓ FileExplorer loaded successfully');
+} catch (error) {
+    console.error('[DEBUG] ✗ FAILED to load FileExplorer:', error);
+    // Create fallback FileExplorer class
+    FileExplorer = class FallbackFileExplorer {
+        constructor() {
+            console.log('[FALLBACK] FileExplorer constructor called');
+            this.currentPath = '';
+        }
+
+        updatePath(newPath) {
+            console.log('[FALLBACK] File explorer path updated:', newPath);
+            this.currentPath = newPath;
+        }
+
+        refreshExplorer() {
+            console.log('[FALLBACK] File explorer refresh');
+        }
+
+        syncWithTerminal(path) {
+            console.log('[FALLBACK] Sync with terminal:', path);
+        }
+    };
+    console.log('[DEBUG] ✓ Fallback FileExplorer created successfully');
+}
+
 class InputValidator {
     static validateRequired(value, fieldName) {
         if (!value || value.trim() === '') {
@@ -206,6 +235,7 @@ class EasyDebugApp {
         const timer = logger.startTimer('app-initialization');
 
         this.terminalManager = new TerminalManager();
+        this.fileExplorer = new FileExplorer();
         this.currentProject = null;
         this.currentTheme = 'dark';
         this.isResizing = false;
@@ -584,17 +614,22 @@ class EasyDebugApp {
 
     setCurrentProject(folderPath) {
         this.currentProject = folderPath;
-        
+
         const currentProjectDiv = document.getElementById('current-project');
         const projectPathDiv = document.getElementById('project-path');
         const editorSection = document.getElementById('editor-section');
-        
+
         currentProjectDiv.classList.remove('hidden');
         projectPathDiv.textContent = folderPath;
         projectPathDiv.title = folderPath;
-        
+
         // Show editor integration buttons when project is selected
         editorSection.classList.remove('hidden');
+
+        // Update file explorer with the new project path
+        if (this.fileExplorer) {
+            this.fileExplorer.updatePath(folderPath);
+        }
     }
 
     detectProjectType(folderPath) {
@@ -710,6 +745,10 @@ class EasyDebugApp {
                 command,
                 project: path.basename(this.currentProject)
             }, 'command');
+
+            // Check if it's a directory change command and sync file explorer
+            this.handleDirectoryChange(command);
+
             logger.endTimer(timer, { success: true });
         } else {
             logger.error('No active terminal found for command execution', null, {
@@ -718,6 +757,69 @@ class EasyDebugApp {
             }, 'command');
             this.showToast('No active terminal found', 'error');
             logger.endTimer(timer, { success: false, reason: 'no-terminal' });
+        }
+    }
+
+    handleDirectoryChange(command) {
+        // Check if the command is a directory change command
+        const cdRegex = /^cd\s+(.+)$/i;
+        const match = command.match(cdRegex);
+
+        if (match) {
+            let targetPath = match[1].trim();
+
+            // Remove quotes if present
+            targetPath = targetPath.replace(/^["']|["']$/g, '');
+
+            logger.debug('Directory change command detected', {
+                command,
+                targetPath,
+                currentProject: this.currentProject
+            }, 'explorer-sync');
+
+            try {
+                // Resolve the path relative to current project
+                let resolvedPath;
+
+                if (path.isAbsolute(targetPath)) {
+                    resolvedPath = targetPath;
+                } else {
+                    resolvedPath = path.resolve(this.currentProject, targetPath);
+                }
+
+                // Verify the directory exists
+                if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isDirectory()) {
+                    logger.info('Syncing file explorer with directory change', {
+                        oldPath: this.currentProject,
+                        newPath: resolvedPath
+                    }, 'explorer-sync');
+
+                    // Update file explorer with new directory
+                    if (this.fileExplorer) {
+                        this.fileExplorer.syncWithTerminal(resolvedPath);
+                    }
+
+                    // Update current project if we've moved to a different project root
+                    // This helps maintain consistency when navigating between projects
+                    if (resolvedPath !== this.currentProject) {
+                        // Don't change the main project, just update the explorer view
+                        logger.debug('Terminal working directory changed', {
+                            projectRoot: this.currentProject,
+                            workingDirectory: resolvedPath
+                        }, 'explorer-sync');
+                    }
+                } else {
+                    logger.warn('Target directory does not exist', {
+                        targetPath,
+                        resolvedPath
+                    }, 'explorer-sync');
+                }
+            } catch (error) {
+                logger.error('Error processing directory change', error, {
+                    command,
+                    targetPath
+                }, 'explorer-sync');
+            }
         }
     }
 

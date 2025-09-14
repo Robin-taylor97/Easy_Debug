@@ -7,6 +7,9 @@ const os = require('os');
 // Import centralized logger
 const logger = require('./utils/logger');
 
+// Import PtyManager for terminal functionality
+const PtyManager = require('./terminal/pty.js');
+
 const store = new Store();
 
 // Log application startup
@@ -714,6 +717,203 @@ function setupIpcHandlers() {
     } catch (logError) {
       console.error('Error processing renderer log:', logError);
       return { success: false, error: logError.message };
+    }
+  });
+
+  // Terminal IPC handlers
+  const terminalProcesses = new Map();
+
+  ipcMain.handle('create-pty', async (event, { workingDirectory = process.cwd() } = {}) => {
+    try {
+      logger.info('Creating PTY process', { workingDirectory }, 'terminal');
+
+      const ptyProcess = PtyManager.createPtyProcess(workingDirectory);
+      const terminalId = `pty-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      terminalProcesses.set(terminalId, ptyProcess);
+
+      logger.info('PTY process created successfully', { terminalId, workingDirectory, pid: ptyProcess.pid }, 'terminal');
+
+      return {
+        success: true,
+        terminalId,
+        pid: ptyProcess.pid
+      };
+    } catch (error) {
+      logger.error('Error creating PTY process', error, { workingDirectory }, 'terminal');
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('pty-write', async (event, { terminalId, data }) => {
+    try {
+      const ptyProcess = terminalProcesses.get(terminalId);
+      if (!ptyProcess) {
+        throw new Error(`PTY process ${terminalId} not found`);
+      }
+
+      ptyProcess.write(data);
+      logger.debug('Data written to PTY', { terminalId, dataLength: data.length }, 'terminal');
+
+      return { success: true };
+    } catch (error) {
+      logger.error('Error writing to PTY', error, { terminalId }, 'terminal');
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('pty-resize', async (event, { terminalId, cols, rows }) => {
+    try {
+      const ptyProcess = terminalProcesses.get(terminalId);
+      if (!ptyProcess) {
+        throw new Error(`PTY process ${terminalId} not found`);
+      }
+
+      ptyProcess.resize(cols, rows);
+      logger.debug('PTY resized', { terminalId, cols, rows }, 'terminal');
+
+      return { success: true };
+    } catch (error) {
+      logger.error('Error resizing PTY', error, { terminalId, cols, rows }, 'terminal');
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('pty-kill', async (event, { terminalId }) => {
+    try {
+      const ptyProcess = terminalProcesses.get(terminalId);
+      if (!ptyProcess) {
+        throw new Error(`PTY process ${terminalId} not found`);
+      }
+
+      ptyProcess.kill();
+      terminalProcesses.delete(terminalId);
+      logger.info('PTY process killed', { terminalId }, 'terminal');
+
+      return { success: true };
+    } catch (error) {
+      logger.error('Error killing PTY', error, { terminalId }, 'terminal');
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Set up PTY data handlers
+  ipcMain.handle('pty-setup-handlers', async (event, { terminalId }) => {
+    try {
+      const ptyProcess = terminalProcesses.get(terminalId);
+      if (!ptyProcess) {
+        throw new Error(`PTY process ${terminalId} not found`);
+      }
+
+      // Set up data handler
+      ptyProcess.onData((data) => {
+        // Send data back to renderer
+        event.sender.send('pty-data', { terminalId, data });
+      });
+
+      // Set up exit handler
+      ptyProcess.onExit((code, signal) => {
+        event.sender.send('pty-exit', { terminalId, code, signal });
+        terminalProcesses.delete(terminalId);
+      });
+
+      logger.info('PTY handlers set up', { terminalId }, 'terminal');
+      return { success: true };
+    } catch (error) {
+      logger.error('Error setting up PTY handlers', error, { terminalId }, 'terminal');
+      return { success: false, error: error.message };
+    }
+  });
+
+  // File Explorer IPC handlers
+  ipcMain.handle('get-directory-contents', async (event, { path }) => {
+    try {
+      logger.info('Getting directory contents', { path }, 'explorer');
+
+      const fs = require('fs');
+      const pathModule = require('path');
+
+      const stats = await fs.promises.stat(path);
+      if (!stats.isDirectory()) {
+        throw new Error('Path is not a directory');
+      }
+
+      const entries = await fs.promises.readdir(path, { withFileTypes: true });
+      const contents = entries.map(entry => ({
+        name: entry.name,
+        isDirectory: entry.isDirectory(),
+        isFile: entry.isFile(),
+        path: pathModule.join(path, entry.name)
+      }));
+
+      logger.info('Directory contents retrieved', { path, itemCount: contents.length }, 'explorer');
+      return { success: true, contents };
+    } catch (error) {
+      logger.error('Error getting directory contents', error, { path }, 'explorer');
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('open-file', async (event, { filePath }) => {
+    try {
+      logger.info('Opening file', { filePath }, 'explorer');
+
+      const { shell } = require('electron');
+      await shell.openPath(filePath);
+
+      logger.info('File opened successfully', { filePath }, 'explorer');
+      return { success: true };
+    } catch (error) {
+      logger.error('Error opening file', error, { filePath }, 'explorer');
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('create-file', async (event, { dirPath, fileName }) => {
+    try {
+      logger.info('Creating file', { dirPath, fileName }, 'explorer');
+
+      const fs = require('fs');
+      const pathModule = require('path');
+
+      const filePath = pathModule.join(dirPath, fileName);
+
+      // Check if file already exists
+      try {
+        await fs.promises.access(filePath);
+        throw new Error('File already exists');
+      } catch (accessError) {
+        // File doesn't exist, continue with creation
+      }
+
+      // Create empty file
+      await fs.promises.writeFile(filePath, '');
+
+      logger.info('File created successfully', { filePath }, 'explorer');
+      return { success: true, filePath };
+    } catch (error) {
+      logger.error('Error creating file', error, { dirPath, fileName }, 'explorer');
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('create-folder', async (event, { dirPath, folderName }) => {
+    try {
+      logger.info('Creating folder', { dirPath, folderName }, 'explorer');
+
+      const fs = require('fs');
+      const pathModule = require('path');
+
+      const folderPath = pathModule.join(dirPath, folderName);
+
+      // Create directory
+      await fs.promises.mkdir(folderPath, { recursive: false });
+
+      logger.info('Folder created successfully', { folderPath }, 'explorer');
+      return { success: true, folderPath };
+    } catch (error) {
+      logger.error('Error creating folder', error, { dirPath, folderName }, 'explorer');
+      return { success: false, error: error.message };
     }
   });
 }

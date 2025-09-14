@@ -299,6 +299,28 @@
                 </div>
             </div>
 
+            <!-- File Explorer Panel -->
+            <div id="file-explorer-panel" class="border-b border-gray-600">
+                <div class="file-explorer-header">
+                    <div class="flex items-center justify-between p-2">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-sm font-medium text-gray-300">📁 File Explorer</span>
+                            <button id="toggle-explorer-btn" class="text-xs" title="Toggle File Explorer">Hide</button>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button id="refresh-explorer-btn" class="text-xs" title="Refresh Files">🔄</button>
+                            <button id="new-file-btn" class="text-xs" title="New File">📄</button>
+                            <button id="new-folder-btn" class="text-xs" title="New Folder">📁</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="file-explorer-content" class="file-explorer-content">
+                    <div id="explorer-tree" class="explorer-tree">
+                        <div class="explorer-empty">No project selected</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Terminal Container -->
             <div id="terminal-container" class="flex-1 p-2">
                 <div id="default-terminal" class="h-full"></div>
