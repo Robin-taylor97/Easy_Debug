@@ -351,7 +351,66 @@
         </div>
     </div>
 
-    <script src="../dist/renderer/vendor.bundle.js"></script>
-    <script src="../dist/renderer/app.bundle.js"></script>
+    <!-- Debugging: Basic renderer initialization check -->
+    <script>
+        console.log('[DEBUG] HTML head loaded, renderer process starting...');
+        console.log('[DEBUG] DOM readyState:', document.readyState);
+        console.log('[DEBUG] Navigator userAgent:', navigator.userAgent);
+        console.log('[DEBUG] Process info:', {
+            type: typeof process !== 'undefined' ? process.type : 'undefined',
+            versions: typeof process !== 'undefined' ? process.versions : 'undefined',
+            nodeIntegration: typeof require !== 'undefined' ? 'enabled' : 'disabled'
+        });
+
+        // Test basic functionality
+        try {
+            if (typeof require !== 'undefined') {
+                console.log('[DEBUG] require() is available');
+                const { ipcRenderer } = require('electron');
+                console.log('[DEBUG] electron module loaded successfully');
+                console.log('[DEBUG] ipcRenderer available:', !!ipcRenderer);
+            } else {
+                console.error('[DEBUG] require() is NOT available - nodeIntegration issue');
+            }
+        } catch (error) {
+            console.error('[DEBUG] Error testing basic functionality:', error);
+        }
+    </script>
+
+    <script src="../dist/renderer/vendor.bundle.js"
+            onload="console.log('[DEBUG] vendor.bundle.js loaded successfully')"
+            onerror="console.error('[DEBUG] FAILED to load vendor.bundle.js', event)"></script>
+    <script src="../dist/renderer/app.bundle.js"
+            onload="console.log('[DEBUG] app.bundle.js loaded successfully')"
+            onerror="console.error('[DEBUG] FAILED to load app.bundle.js', event)"></script>
+
+    <!-- Additional debugging script to track bundle execution -->
+    <script>
+        console.log('[DEBUG] All script tags processed');
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('[DEBUG] DOMContentLoaded fired in HTML');
+        });
+
+        window.addEventListener('load', () => {
+            console.log('[DEBUG] window.load fired in HTML');
+            console.log('[DEBUG] window.EasyDebugApp available:', !!window.EasyDebugApp);
+            console.log('[DEBUG] window.easyDebugApp instance:', !!window.easyDebugApp);
+        });
+
+        // Error handlers
+        window.addEventListener('error', (event) => {
+            console.error('[DEBUG] Global error in renderer:', {
+                message: event.message,
+                filename: event.filename,
+                lineno: event.lineno,
+                colno: event.colno,
+                error: event.error
+            });
+        });
+
+        window.addEventListener('unhandledrejection', (event) => {
+            console.error('[DEBUG] Unhandled promise rejection in renderer:', event.reason);
+        });
+    </script>
 </body>
 </html>

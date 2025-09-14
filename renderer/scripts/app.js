@@ -1,10 +1,128 @@
-const { ipcRenderer, shell } = require('electron');
-const TerminalManager = require('../../terminal/terminal.js');
-const fs = require('fs');
-const path = require('path');
+// DEBUG: Track bundle execution immediately
+console.log('[DEBUG] ==== app.js bundle execution starting ====');
+console.log('[DEBUG] Module system check: typeof require =', typeof require);
+console.log('[DEBUG] Node environment: typeof process =', typeof process);
 
-// Import renderer logger
-const logger = require('../../utils/renderer-logger');
+// Test each module loading individually
+let ipcRenderer, shell, TerminalManager, fs, path, logger;
+
+console.log('[DEBUG] Loading electron module...');
+try {
+    const electronModule = require('electron');
+    ipcRenderer = electronModule.ipcRenderer;
+    shell = electronModule.shell;
+    console.log('[DEBUG] ✓ electron module loaded successfully');
+} catch (error) {
+    console.error('[DEBUG] ✗ FAILED to load electron module:', error);
+}
+
+console.log('[DEBUG] Loading TerminalManager...');
+try {
+    TerminalManager = require('../../terminal/terminal.js');
+    console.log('[DEBUG] ✓ TerminalManager loaded successfully');
+} catch (error) {
+    console.error('[DEBUG] ✗ FAILED to load TerminalManager:', error);
+    // Create fallback TerminalManager class
+    TerminalManager = class FallbackTerminalManager {
+        constructor() {
+            console.log('[FALLBACK] TerminalManager constructor called');
+            this.terminals = new Map();
+        }
+
+        createTerminal(containerId) {
+            console.log('[FALLBACK] Creating mock terminal for container:', containerId);
+            const terminal = {
+                write: (data) => console.log('[FALLBACK] Terminal write:', data),
+                dispose: () => console.log('[FALLBACK] Terminal disposed'),
+                fit: () => console.log('[FALLBACK] Terminal fit'),
+                focus: () => console.log('[FALLBACK] Terminal focus')
+            };
+            this.terminals.set(containerId, terminal);
+            return terminal;
+        }
+
+        disposeTerminal(id) {
+            console.log('[FALLBACK] Disposing terminal:', id);
+            this.terminals.delete(id);
+        }
+
+        writeToTerminal(id, data) {
+            console.log('[FALLBACK] Writing to terminal:', id, data);
+        }
+
+        resizeTerminal(id, cols, rows) {
+            console.log('[FALLBACK] Resizing terminal:', id, cols, rows);
+        }
+
+        updateTheme(theme) {
+            console.log('[FALLBACK] Updating theme to:', theme);
+        }
+
+        setActiveTerminal(id) {
+            console.log('[FALLBACK] Setting active terminal to:', id);
+        }
+
+        resizeAll() {
+            console.log('[FALLBACK] Resizing all terminals');
+        }
+
+        executeCommand(command, terminalId) {
+            console.log('[FALLBACK] Executing command:', command, 'in terminal:', terminalId);
+            return Promise.resolve({ success: true, output: 'Mock command execution' });
+        }
+    };
+    console.log('[DEBUG] ✓ Fallback TerminalManager created successfully');
+}
+
+console.log('[DEBUG] Loading fs module...');
+try {
+    fs = require('fs');
+    console.log('[DEBUG] ✓ fs module loaded successfully');
+} catch (error) {
+    console.error('[DEBUG] ✗ FAILED to load fs module:', error);
+}
+
+console.log('[DEBUG] Loading path module...');
+try {
+    path = require('path');
+    console.log('[DEBUG] ✓ path module loaded successfully');
+} catch (error) {
+    console.error('[DEBUG] ✗ FAILED to load path module:', error);
+}
+
+console.log('[DEBUG] Loading renderer logger...');
+try {
+    logger = require('../../utils/renderer-logger');
+    console.log('[DEBUG] ✓ renderer logger loaded successfully');
+} catch (error) {
+    console.error('[DEBUG] ✗ FAILED to load renderer logger:', error);
+    // Create fallback logger with all required methods
+    logger = {
+        info: (msg, data, category) => console.log('[FALLBACK LOGGER]', msg, data),
+        debug: (msg, data, category) => console.log('[FALLBACK LOGGER]', msg, data),
+        warn: (msg, data, category) => console.warn('[FALLBACK LOGGER]', msg, data),
+        error: (msg, error, data, category) => console.error('[FALLBACK LOGGER]', msg, error, data),
+        userAction: (action, details, element) => console.log('[FALLBACK LOGGER] User action:', action, details),
+        projectOperation: (op, path, details) => console.log('[FALLBACK LOGGER] Project op:', op, path, details),
+        commandExecution: (cmd, path, details) => console.log('[FALLBACK LOGGER] Command:', cmd, path, details),
+        terminalOperation: (op, details) => console.log('[FALLBACK LOGGER] Terminal:', op, details),
+        themeOperation: (op, details) => console.log('[FALLBACK LOGGER] Theme:', op, details),
+        modalOperation: (op, modalId, details) => console.log('[FALLBACK LOGGER] Modal:', op, modalId, details),
+        formValidation: (formId, field, result, details) => console.log('[FALLBACK LOGGER] Validation:', formId, field, result, details),
+        notification: (type, msg, details) => console.log('[FALLBACK LOGGER] Notification:', type, msg, details),
+        startTimer: (operation) => {
+            const timer = { operation, startTime: Date.now() };
+            console.log('[FALLBACK LOGGER] Timer started:', operation);
+            return timer;
+        },
+        endTimer: (timer, data = {}) => {
+            const duration = Date.now() - timer.startTime;
+            console.log('[FALLBACK LOGGER] Timer ended:', timer.operation, `${duration}ms`, data);
+            return duration;
+        }
+    };
+    console.log('[DEBUG] ✓ Fallback logger created successfully');
+}
 
 class InputValidator {
     static validateRequired(value, fieldName) {
@@ -74,8 +192,12 @@ class InputValidator {
     }
 }
 
+console.log('[DEBUG] Defining EasyDebugApp class...');
+
 class EasyDebugApp {
     constructor() {
+        console.log('[DEBUG] EasyDebugApp constructor called');
+        console.log('[DEBUG] Logger available:', !!logger);
         logger.info('EasyDebugApp constructor started', {
             timestamp: new Date().toISOString(),
             userAgent: navigator.userAgent
@@ -947,17 +1069,22 @@ class EasyDebugApp {
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
         toast.textContent = message;
-        
+
         container.appendChild(toast);
-        
+
         // Trigger animation
         setTimeout(() => toast.classList.add('show'), 10);
-        
+
         // Remove toast after 3 seconds
         setTimeout(() => {
             toast.classList.remove('show');
             setTimeout(() => container.removeChild(toast), 300);
         }, 3000);
+    }
+
+    showNotification(message, type = 'info') {
+        logger.notification(type, message, { source: 'showNotification' }, 'notification');
+        this.showToast(message, type);
     }
 
     // Command History Management
@@ -1411,26 +1538,50 @@ class EasyDebugApp {
     }
 }
 
+console.log('[DEBUG] Class definition complete, setting up global references...');
+
 // Make classes available globally for webpack
-window.EasyDebugApp = EasyDebugApp;
-window.InputValidator = InputValidator;
+try {
+    window.EasyDebugApp = EasyDebugApp;
+    window.InputValidator = InputValidator;
+    console.log('[DEBUG] ✓ Global classes set successfully');
+} catch (error) {
+    console.error('[DEBUG] ✗ FAILED to set global classes:', error);
+}
+
+console.log('[DEBUG] Setting up DOM initialization...');
+console.log('[DEBUG] Current DOM readyState:', document.readyState);
+console.log('[DEBUG] document object available:', !!document);
 
 // Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOM loaded, initializing EasyDebugApp...');
-    const app = new EasyDebugApp();
-    window.easyDebugApp = app; // Store reference globally for debugging
-    console.log('EasyDebugApp initialized successfully');
+    console.log('[DEBUG] ==== DOMContentLoaded EVENT FIRED ====');
+    console.log('[DEBUG] DOM loaded, initializing EasyDebugApp...');
+    try {
+        const app = new EasyDebugApp();
+        window.easyDebugApp = app; // Store reference globally for debugging
+        console.log('[DEBUG] ✓ EasyDebugApp initialized successfully from DOMContentLoaded');
+    } catch (error) {
+        console.error('[DEBUG] ✗ FAILED to initialize EasyDebugApp from DOMContentLoaded:', error);
+    }
 });
+
+console.log('[DEBUG] DOMContentLoaded listener attached');
 
 // Also try to initialize immediately if DOM is already loaded
 if (document.readyState === 'loading') {
     // DOM is still loading, wait for DOMContentLoaded
-    console.log('DOM still loading, waiting...');
+    console.log('[DEBUG] DOM still loading, waiting for DOMContentLoaded...');
 } else {
     // DOM is already loaded
-    console.log('DOM already loaded, initializing immediately...');
-    const app = new EasyDebugApp();
-    window.easyDebugApp = app;
-    console.log('EasyDebugApp initialized immediately');
+    console.log('[DEBUG] DOM already loaded (' + document.readyState + '), initializing immediately...');
+    try {
+        const app = new EasyDebugApp();
+        window.easyDebugApp = app;
+        console.log('[DEBUG] ✓ EasyDebugApp initialized immediately');
+    } catch (error) {
+        console.error('[DEBUG] ✗ FAILED to initialize EasyDebugApp immediately:', error);
+    }
 }
+
+console.log('[DEBUG] ==== app.js bundle execution completed ====');
