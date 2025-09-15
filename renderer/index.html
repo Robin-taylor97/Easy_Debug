@@ -1,347 +1,357 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Easy Debug - Development Assistant</title>
-    <link rel="stylesheet" href="styles/main.css">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.tailwindcss.com; font-src 'self' https://cdnjs.cloudflare.com; img-src 'self' data:; connect-src 'self' https:;">
+    <title>Easy Debug</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="stylesheet" href="../node_modules/xterm/css/xterm.css">
+    <link rel="stylesheet" href="styles/main.css">
+    <style>
+        .ribbon-panel {
+            @apply p-4 transition-all duration-300 ease-in-out;
+        }
+        .command-btn {
+            @apply flex flex-col items-center p-3 rounded-md transition-colors duration-200 hover:bg-gray-600;
+        }
+        .command-btn span {
+            @apply text-xs mt-1 text-gray-400;
+        }
+        .file-item {
+            @apply flex items-center p-2 rounded-md hover:bg-gray-700 transition cursor-pointer;
+        }
+    </style>
 </head>
-<body>
-    <!-- Main Container -->
-    <div id="app">
-        <!-- Left Panel - Control Sidebar -->
-        <div id="left-panel">
-            <!-- Header -->
-            <div class="header-section">
-                <div class="flex items-center justify-between">
-                    <h1>Easy Debug</h1>
-                    <button id="theme-toggle">🌙</button>
-                </div>
+<body class="bg-gray-900 text-gray-300 h-screen flex flex-col font-sans antialiased">
+    <header class="bg-gray-800 border-b border-gray-700 shadow-md">
+        <nav class="flex justify-between items-center px-6 py-3">
+            <div class="flex items-center space-x-6">
+                <h1 class="text-2xl font-extrabold text-blue-400">Easy Debug</h1>
+                <button class="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 transition" id="new-window-btn">
+                    <i class="fas fa-plus text-xs"></i>
+                    <span class="text-sm text-gray-300">New Window</span>
+                </button>
+                <button class="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-gray-700 hover:bg-gray-600 transition" id="select-folder-btn">
+                    <i class="fas fa-folder-open text-xs"></i>
+                    <span class="text-sm text-gray-300">Open Folder</span>
+                </button>
             </div>
+            <button id="theme-toggle" aria-label="Toggle Theme" class="p-2 rounded-lg text-xl hover:bg-gray-700 transition">
+                <i class="fas fa-moon text-blue-400"></i>
+            </button>
+        </nav>
 
-            <!-- Project Section -->
-            <div class="project-section">
-                <div class="mb-3">
-                    <button id="select-folder-btn">📁 Select Project Folder</button>
-                </div>
-                
-                <div id="current-project" class="mb-3 hidden">
-                    <div class="text-sm text-gray-400 mb-1">Current Project:</div>
-                    <div id="project-path"></div>
-                    <div id="project-type" class="text-xs text-blue-400 mt-1"></div>
-                </div>
-
-                <div id="recent-projects" class="hidden">
-                    <div class="text-sm text-gray-400 mb-2">Recent Projects:</div>
-                    <div id="recent-list" class="space-y-1 max-h-32 overflow-y-auto"></div>
-                </div>
-
-                <div id="editor-section" class="mt-3 hidden">
-                    <div class="text-sm text-gray-400 mb-2">Open in Editor:</div>
-                    <div class="flex space-x-2">
-                        <button id="open-vscode-btn" title="Open project in VS Code">📝 VS Code</button>
-                        <button id="open-studio-btn" title="Open project in Android Studio">🤖 Studio</button>
-                        <button id="open-explorer-btn" title="Open project in file explorer">📁 Explorer</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Command Groups -->
-            <div class="flex-1 overflow-y-auto">
-                <!-- Flutter Commands -->
-                <div class="command-group">
-                    <button class="command-group-header" data-group="flutter">
-                        <div class="flex items-center">
-                            <span class="mr-2 text-blue-400">📱</span>
-                            <span class="font-medium">Flutter</span>
-                        </div>
-                        <span class="expand-arrow">▼</span>
-                    </button>
-                    <div class="command-group-content">
-                        <button class="command-btn" data-command="flutter run -d chrome --web-port 8080" title="Run Flutter app in Chrome browser">
-                            <div class="font-medium">🌐 Run in Chrome</div>
-                            <div class="text-xs text-gray-400">Launch web version</div>
-                        </button>
-                        <button class="command-btn" data-command="flutter run -d emulator-5554" title="Run Flutter app in Android emulator">
-                            <div class="font-medium">📱 Run in Emulator</div>
-                            <div class="text-xs text-gray-400">Launch on Android emulator</div>
-                        </button>
-                        <button class="command-btn" data-command="flutter clean && flutter pub get" title="Clean and reinstall dependencies">
-                            <div class="font-medium">🔄 Reset App</div>
-                            <div class="text-xs text-gray-400">Clean & get dependencies</div>
-                        </button>
-                        <button class="command-btn" data-command="flutter analyze lib" title="Analyze Dart code for issues">
-                            <div class="font-medium">🔍 Analyze Code</div>
-                            <div class="text-xs text-gray-400">Check for code issues</div>
-                        </button>
-                        <button class="command-btn" data-command="flutter build apk" title="Build release APK">
-                            <div class="font-medium">📦 Build Release</div>
-                            <div class="text-xs text-gray-400">Generate APK file</div>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Python Commands -->
-                <div class="command-group">
-                    <button class="command-group-header" data-group="python">
-                        <div class="flex items-center">
-                            <span class="mr-2 text-green-400">🐍</span>
-                            <span class="font-medium">Python</span>
-                        </div>
-                        <span class="expand-arrow">▼</span>
-                    </button>
-                    <div class="command-group-content">
-                        <button class="command-btn" data-command="python main.py" title="Run the main Python script">
-                            <div class="font-medium">▶️ Run Script</div>
-                            <div class="text-xs text-gray-400">Execute main.py</div>
-                        </button>
-                        <button class="command-btn" data-command="pip install -r requirements.txt" title="Install project dependencies">
-                            <div class="font-medium">📦 Install Dependencies</div>
-                            <div class="text-xs text-gray-400">Install from requirements.txt</div>
-                        </button>
-                        <button class="command-btn" data-command="pytest" title="Run test suite">
-                            <div class="font-medium">🧪 Run Tests</div>
-                            <div class="text-xs text-gray-400">Execute pytest</div>
-                        </button>
-                        <button class="command-btn" data-command="source venv/bin/activate" title="Activate virtual environment">
-                            <div class="font-medium">🔧 Activate venv</div>
-                            <div class="text-xs text-gray-400">Enable virtual environment</div>
-                        </button>
-                        <button class="command-btn" data-command="flake8" title="Check code style">
-                            <div class="font-medium">📝 Lint Code</div>
-                            <div class="text-xs text-gray-400">Check with flake8</div>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Web Development Commands -->
-                <div class="command-group">
-                    <button class="command-group-header" data-group="web">
-                        <div class="flex items-center">
-                            <span class="mr-2 text-yellow-400">🌐</span>
-                            <span class="font-medium">Web Dev</span>
-                        </div>
-                        <span class="expand-arrow">▼</span>
-                    </button>
-                    <div class="command-group-content">
-                        <button class="command-btn" data-command="npm run dev" title="Start development server">
-                            <div class="font-medium">🚀 Start Dev Server</div>
-                            <div class="text-xs text-gray-400">Run npm dev script</div>
-                        </button>
-                        <button class="command-btn" data-command="npm run build" title="Build for production">
-                            <div class="font-medium">🏗️ Build Project</div>
-                            <div class="text-xs text-gray-400">Create production build</div>
-                        </button>
-                        <button class="command-btn" data-command="npm install" title="Install npm packages">
-                            <div class="font-medium">📦 Install Packages</div>
-                            <div class="text-xs text-gray-400">Install dependencies</div>
-                        </button>
-                        <button class="command-btn" data-command="npm test" title="Run test suite">
-                            <div class="font-medium">🧪 Run Tests</div>
-                            <div class="text-xs text-gray-400">Execute test scripts</div>
-                        </button>
-                        <button class="command-btn" id="open-browser-btn" title="Open project in browser">
-                            <div class="font-medium">🔗 Open in Browser</div>
-                            <div class="text-xs text-gray-400">Launch index.html</div>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Git Commands -->
-                <div class="command-group">
-                    <button class="command-group-header" data-group="git">
-                        <div class="flex items-center">
-                            <span class="mr-2 text-orange-400">🔧</span>
-                            <span class="font-medium">Git</span>
-                        </div>
-                        <span class="expand-arrow">▼</span>
-                    </button>
-                    <div class="command-group-content">
-                        <button class="command-btn" data-command="git status" title="Show repository status">
-                            <div class="font-medium">📊 Status</div>
-                            <div class="text-xs text-gray-400">Check git status</div>
-                        </button>
-                        <button class="command-btn" data-command="git pull" title="Pull latest changes">
-                            <div class="font-medium">⬇️ Pull</div>
-                            <div class="text-xs text-gray-400">Get latest changes</div>
-                        </button>
-                        <button class="command-btn" data-command="git push" title="Push changes to remote">
-                            <div class="font-medium">⬆️ Push</div>
-                            <div class="text-xs text-gray-400">Upload changes</div>
-                        </button>
-                        <button class="command-btn" id="git-commit-btn" title="Commit changes">
-                            <div class="font-medium">💾 Commit</div>
-                            <div class="text-xs text-gray-400">Save changes</div>
-                        </button>
-                        <button class="command-btn" id="git-checkout-btn" title="Switch branch">
-                            <div class="font-medium">🔀 Checkout</div>
-                            <div class="text-xs text-gray-400">Switch branches</div>
-                        </button>
-                        <button class="command-btn" id="git-branch-btn" title="Create new branch">
-                            <div class="font-medium">🌿 New Branch</div>
-                            <div class="text-xs text-gray-400">Create branch</div>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- System Info -->
-                <div class="command-group">
-                    <button class="command-group-header" data-group="system">
-                        <div class="flex items-center">
-                            <span class="mr-2 text-purple-400">ℹ️</span>
-                            <span class="font-medium">System Info</span>
-                        </div>
-                        <span class="expand-arrow">▼</span>
-                    </button>
-                    <div class="command-group-content">
-                        <div class="p-3">
-                            <div class="text-xs text-gray-400 mb-2">Development Tools:</div>
-                            <div id="system-versions" class="space-y-1 text-xs">
-                                <div class="flex justify-between">
-                                    <span>Node.js:</span>
-                                    <span id="node-version" class="text-green-400">Checking...</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span>Git:</span>
-                                    <span id="git-version" class="text-green-400">Checking...</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span>Flutter:</span>
-                                    <span id="flutter-version" class="text-green-400">Checking...</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span>Python:</span>
-                                    <span id="python-version" class="text-green-400">Checking...</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span>VS Code:</span>
-                                    <span id="vscode-version" class="text-green-400">Checking...</span>
-                                </div>
-                            </div>
-                            <button id="refresh-versions-btn" class="mt-3">🔄 Refresh Versions</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Custom Commands -->
-                <div class="command-group">
-                    <button class="command-group-header" data-group="custom">
-                        <div class="flex items-center">
-                            <span class="mr-2 text-pink-400">⚡</span>
-                            <span class="font-medium">Custom Commands</span>
-                        </div>
-                        <span class="expand-arrow">▼</span>
-                    </button>
-                    <div class="command-group-content">
-                        <div class="p-3">
-                            <button id="add-custom-command-btn" class="mb-3">➕ Add Custom Command</button>
-                            <div id="custom-commands-list" class="space-y-2">
-                                <!-- Custom commands will be dynamically added here -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+        <div role="tablist" class="flex items-center space-x-1 p-2 bg-gray-800">
+            <button class="ribbon-tab active px-4 py-2 rounded-t-lg text-sm transition-colors duration-200 text-white bg-gray-700" data-target="flutter">
+                Flutter
+            </button>
+            <button class="ribbon-tab px-4 py-2 rounded-t-lg text-sm text-gray-400 hover:bg-gray-700 hover:text-white transition-colors duration-200" data-target="python">
+                Python
+            </button>
+            <button class="ribbon-tab px-4 py-2 rounded-t-lg text-sm text-gray-400 hover:bg-gray-700 hover:text-white transition-colors duration-200" data-target="web">
+                Web Dev
+            </button>
+            <button class="ribbon-tab px-4 py-2 rounded-t-lg text-sm text-gray-400 hover:bg-gray-700 hover:text-white transition-colors duration-200" data-target="git">
+                Git
+            </button>
+            <button class="ribbon-tab px-4 py-2 rounded-t-lg text-sm text-gray-400 hover:bg-gray-700 hover:text-white transition-colors duration-200" data-target="utilities">
+                Utilities
+            </button>
+            <button class="ribbon-tab px-4 py-2 rounded-t-lg text-sm text-gray-400 hover:bg-gray-700 hover:text-white transition-colors duration-200" data-target="cmd">
+                CMD
+            </button>
         </div>
 
-        <!-- Resizer -->
-        <div id="resizer"></div>
+        <div class="p-2">
 
-        <!-- Right Panel - Terminal -->
-        <div id="right-panel">
-            <!-- Terminal Header -->
-            <div class="terminal-header">
-                <div class="flex items-center space-x-2">
-                    <span class="text-sm font-medium text-gray-300">Terminal</span>
-                    <button id="new-terminal-btn">+ New</button>
-                    <button id="clear-terminal-btn">Clear</button>
-                </div>
-                <div class="window-controls flex items-center space-x-1">
-                    <button id="minimize-btn">─</button>
-                    <button id="maximize-btn">□</button>
-                    <button id="close-btn">×</button>
-                </div>
+            <div id="flutter" class="ribbon-panel flex space-x-4">
+                <button class="command-btn" data-command="flutter run -d chrome --web-port 8080" title="flutter run -d chrome">
+                    <i class="fas fa-globe text-blue-400"></i>
+                    <span>Run in Chrome</span>
+                </button>
+                <button class="command-btn" data-command="flutter run -d emulator-5554" title="flutter run -d emulator">
+                    <i class="fas fa-mobile-alt text-blue-400"></i>
+                    <span>Run in Emulator</span>
+                </button>
+                <button class="command-btn" data-command="flutter clean && flutter pub get" title="flutter clean">
+                    <i class="fas fa-broom text-blue-400"></i>
+                    <span>Reset App</span>
+                </button>
+                <button class="command-btn" data-command="flutter analyze lib" title="flutter analyze">
+                    <i class="fas fa-search text-blue-400"></i>
+                    <span>Analyze</span>
+                </button>
+                <button class="command-btn" data-command="flutter build apk" title="flutter build apk">
+                    <i class="fas fa-box text-blue-400"></i>
+                    <span>Build</span>
+                </button>
             </div>
-
-            <!-- Command History Panel -->
-            <div id="history-panel" class="hidden">
-                <div class="history-header">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center space-x-2">
-                            <span class="text-sm font-medium text-gray-300">📋 Command History</span>
-                            <button id="toggle-history-btn" class="text-xs">Hide</button>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <input type="text" id="history-search" placeholder="Search commands..." class="history-search-input">
-                            <button id="clear-history-btn" class="text-xs">Clear</button>
-                            <button id="export-history-btn" class="text-xs">Export</button>
-                        </div>
-                    </div>
-                </div>
-                <div id="history-content" class="history-content">
-                    <div id="history-list" class="history-list">
-                        <div class="history-empty">No commands executed yet</div>
-                    </div>
-                </div>
+            <div id="python" class="ribbon-panel hidden space-x-4">
+                <button class="command-btn" data-command="python main.py" title="python main.py">
+                    <i class="fas fa-play text-green-500"></i>
+                    <span>Run Script</span>
+                </button>
+                <button class="command-btn" data-command="pip install -r requirements.txt" title="pip install -r requirements.txt">
+                    <i class="fas fa-download text-green-500"></i>
+                    <span>Install Deps</span>
+                </button>
+                <button class="command-btn" data-command="pytest" title="pytest">
+                    <i class="fas fa-flask text-green-500"></i>
+                    <span>Run Tests</span>
+                </button>
+                <button class="command-btn" data-command="flake8" title="pylint main.py">
+                    <i class="fas fa-check-circle text-green-500"></i>
+                    <span>Linting</span>
+                </button>
             </div>
-
-            <!-- Terminal Tabs -->
-            <div id="terminal-tabs">
-                <div id="tabs-container" class="flex overflow-x-auto">
-                    <div class="terminal-tab active" data-terminal="default-terminal">
-                        <span class="tab-title">Terminal 1</span>
-                        <span class="terminal-tab-close" data-close="default-terminal">×</span>
-                    </div>
-                    <button id="show-history-btn" class="terminal-tab" style="margin-left: auto;">
-                        <span class="tab-title">📋 History</span>
-                    </button>
-                </div>
+            <div id="web" class="ribbon-panel hidden space-x-4">
+                <button class="command-btn" data-command="npm run dev" title="npm run dev">
+                    <i class="fas fa-code text-yellow-500"></i>
+                    <span>npm run dev</span>
+                </button>
+                <button class="command-btn" data-command="npm install" title="npm install">
+                    <i class="fas fa-arrow-alt-circle-down text-yellow-500"></i>
+                    <span>npm install</span>
+                </button>
+                <button class="command-btn" data-command="npm run build" title="npm run build">
+                    <i class="fas fa-hammer text-yellow-500"></i>
+                    <span>npm build</span>
+                </button>
+                <button class="command-btn" data-command="npm test" title="npm test">
+                    <i class="fas fa-flask text-yellow-500"></i>
+                    <span>npm test</span>
+                </button>
             </div>
-
-            <!-- File Explorer Panel -->
-            <div id="file-explorer-panel" class="border-b border-gray-600">
-                <div class="file-explorer-header">
-                    <div class="flex items-center justify-between p-2">
-                        <div class="flex items-center space-x-2">
-                            <span class="text-sm font-medium text-gray-300">📁 File Explorer</span>
-                            <button id="toggle-explorer-btn" class="text-xs" title="Toggle File Explorer">Hide</button>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <button id="refresh-explorer-btn" class="text-xs" title="Refresh Files">🔄</button>
-                            <button id="new-file-btn" class="text-xs" title="New File">📄</button>
-                            <button id="new-folder-btn" class="text-xs" title="New Folder">📁</button>
-                        </div>
-                    </div>
-                </div>
-                <div id="file-explorer-content" class="file-explorer-content">
-                    <div id="explorer-tree" class="explorer-tree">
-                        <div class="explorer-empty">No project selected</div>
-                    </div>
-                </div>
+            <div id="git" class="ribbon-panel hidden space-x-4">
+                <button class="command-btn" data-command="git status" title="git status">
+                    <i class="fas fa-info-circle text-purple-400"></i>
+                    <span>Status</span>
+                </button>
+                <button class="command-btn" data-command="git pull" title="git pull">
+                    <i class="fas fa-arrow-down text-purple-400"></i>
+                    <span>Pull</span>
+                </button>
+                <button class="command-btn" data-command="git push" title="git push">
+                    <i class="fas fa-arrow-up text-purple-400"></i>
+                    <span>Push</span>
+                </button>
+                <button class="command-btn" id="git-commit-btn" title="git commit">
+                    <i class="fas fa-save text-purple-400"></i>
+                    <span>Commit</span>
+                </button>
             </div>
-
-            <!-- Terminal Container -->
-            <div id="terminal-container" class="flex-1 p-2">
-                <div id="default-terminal" class="h-full"></div>
+            <div id="utilities" class="ribbon-panel hidden space-x-4">
+                <button class="command-btn" id="clear-terminal-btn" title="clear">
+                    <i class="fas fa-eraser text-gray-400"></i>
+                    <span>Clear</span>
+                </button>
+                <button class="command-btn" id="add-custom-command-btn" title="Add Custom Command">
+                    <i class="fas fa-plus text-gray-400"></i>
+                    <span>Custom Cmd</span>
+                </button>
+                <button class="command-btn" id="refresh-versions-btn" title="System Info">
+                    <i class="fas fa-info text-gray-400"></i>
+                    <span>System Info</span>
+                </button>
+            </div>
+            <div id="cmd" class="ribbon-panel hidden space-x-4">
+                <button class="command-btn" data-command="dir" title="dir / ls">
+                    <i class="fas fa-list text-gray-400"></i>
+                    <span>List Files</span>
+                </button>
+                <button class="command-btn" data-command="cls" title="cls / clear">
+                    <i class="fas fa-terminal text-gray-400"></i>
+                    <span>Clear Screen</span>
+                </button>
+                <button class="command-btn" data-command="ipconfig" title="ipconfig">
+                    <i class="fas fa-network-wired text-gray-400"></i>
+                    <span>IP Config</span>
+                </button>
+                <button class="command-btn" data-command="help" title="help">
+                    <i class="fas fa-question-circle text-gray-400"></i>
+                    <span>Help</span>
+                </button>
             </div>
         </div>
-    </div>
+    </header>
+
+    <main class="flex flex-1 gap-5 p-5 bg-gray-900">
+        <aside class="w-64 bg-gray-800 rounded-xl p-5 shadow-lg flex flex-col">
+            <h2 class="font-bold text-lg text-gray-100 mb-4">Project Explorer</h2>
+            <button class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition mb-5" id="select-folder-btn-main">
+                Open Folder
+            </button>
+
+            <!-- Current project display -->
+            <div id="current-project" class="mb-3 hidden">
+                <div class="text-sm text-gray-400 mb-1">Current Project:</div>
+                <div id="project-path" class="text-xs break-all"></div>
+                <div id="project-type" class="text-xs text-blue-400 mt-1"></div>
+            </div>
+
+            <h3 class="text-xs text-gray-500 uppercase tracking-wide mb-2">Recent Projects</h3>
+            <ul class="space-y-2 text-sm" id="recent-projects-list">
+                <li class="p-3 hover:bg-gray-700 rounded-lg transition cursor-pointer flex items-center space-x-3">
+                    <i class="fas fa-folder text-blue-400"></i>
+                    <span>/my-flutter-app</span>
+                </li>
+                <li class="p-3 hover:bg-gray-700 rounded-lg transition cursor-pointer flex items-center space-x-3">
+                    <i class="fas fa-folder text-blue-400"></i>
+                    <span>/api-server-py</span>
+                </li>
+            </ul>
+            <div class="mt-6">
+                <h3 class="text-xs text-gray-500 uppercase tracking-wide mb-2">Current Folder</h3>
+                <ul class="space-y-1 text-sm" id="current-folder-files">
+                    <li class="file-item">
+                        <i class="fas fa-folder text-gray-500 mr-2"></i>
+                        <span>lib/</span>
+                    </li>
+                    <li class="file-item">
+                        <i class="fas fa-file text-gray-500 mr-2"></i>
+                        <span>main.dart</span>
+                    </li>
+                    <li class="file-item">
+                        <i class="fas fa-file text-gray-500 mr-2"></i>
+                        <span>pubspec.yaml</span>
+                    </li>
+                    <li class="file-item">
+                        <i class="fas fa-file text-gray-500 mr-2"></i>
+                        <span>README.md</span>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Editor integration section -->
+            <div id="editor-section" class="mt-3 hidden">
+                <div class="text-sm text-gray-400 mb-2">Open in Editor:</div>
+                <div class="flex space-x-2">
+                    <button id="open-vscode-btn" title="Open project in VS Code" class="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600">VS Code</button>
+                    <button id="open-studio-btn" title="Open project in Android Studio" class="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600">Studio</button>
+                    <button id="open-explorer-btn" title="Open project in file explorer" class="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600">Explorer</button>
+                </div>
+            </div>
+        </aside>
+
+        <section class="flex flex-col flex-1 bg-gray-800 rounded-xl shadow-lg">
+            <div class="flex items-center border-b border-gray-700 bg-gray-900 rounded-t-xl">
+                <div class="flex">
+                    <button class="p-3 text-gray-400 hover:text-white transition" id="new-terminal-btn" title="New Terminal">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>
+                <button class="p-3 text-gray-400 hover:text-white transition ml-auto" id="show-history-btn" title="Show Command History">
+                    <i class="fas fa-history"></i>
+                </button>
+            </div>
+            <div id="terminal-container" class="flex-1 overflow-hidden bg-black">
+                <div id="default-terminal" class="h-full w-full"></div>
+
+                <!-- System versions display area -->
+                <div id="system-versions" class="hidden mt-4 p-4 bg-gray-900 rounded-lg">
+                    <h3 class="text-sm font-medium text-gray-300 mb-3">System Information</h3>
+                    <div class="space-y-2 text-xs">
+                        <div class="flex justify-between">
+                            <span>Node.js:</span>
+                            <span id="node-version" class="text-green-400">Checking...</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Git:</span>
+                            <span id="git-version" class="text-green-400">Checking...</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Flutter:</span>
+                            <span id="flutter-version" class="text-green-400">Checking...</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>Python:</span>
+                            <span id="python-version" class="text-green-400">Checking...</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span>VS Code:</span>
+                            <span id="vscode-version" class="text-green-400">Checking...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <aside class="w-64 bg-gray-800 rounded-xl p-5 shadow-lg flex flex-col">
+            <h2 class="font-bold text-lg text-gray-100 mb-4">Command History</h2>
+            <div class="flex items-center justify-between mb-3">
+                <input type="text" id="history-search" placeholder="Search commands..." class="text-xs px-2 py-1 rounded bg-gray-700 text-gray-300 flex-1 mr-2">
+                <button id="clear-history-btn" class="text-xs px-2 py-1 rounded bg-red-600 hover:bg-red-700 text-white">Clear</button>
+            </div>
+            <div class="overflow-y-auto text-sm space-y-3" id="command-history-list">
+                <div class="p-3 bg-gray-900 rounded-lg border-l-4 border-green-500">
+                    <div class="flex items-center justify-between text-xs text-gray-500">
+                        <span class="flex items-center space-x-1">
+                            <i class="fas fa-check-circle text-green-500"></i>
+                            <span>Success</span>
+                        </span>
+                        <span>10:30 AM</span>
+                    </div>
+                    <p class="mt-1 font-mono text-gray-300">$ flutter run -d chrome</p>
+                </div>
+                <div class="p-3 bg-gray-900 rounded-lg border-l-4 border-red-500">
+                    <div class="flex items-center justify-between text-xs text-gray-500">
+                        <span class="flex items-center space-x-1">
+                            <i class="fas fa-times-circle text-red-500"></i>
+                            <span>Error</span>
+                        </span>
+                        <span>10:35 AM</span>
+                    </div>
+                    <p class="mt-1 font-mono text-gray-300">$ python main.py</p>
+                </div>
+                <div class="history-empty text-gray-500 text-center py-4 hidden">No commands executed yet</div>
+            </div>
+            <div class="mt-4 flex space-x-2">
+                <button id="export-history-btn" class="text-xs px-2 py-1 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 flex-1">Export</button>
+                <button id="toggle-history-btn" class="text-xs px-2 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white">Auto-scroll</button>
+            </div>
+        </aside>
+    </main>
 
     <!-- Toast Notifications -->
     <div id="toast-container"></div>
 
     <!-- Modals -->
     <div id="modal-overlay" class="hidden"></div>
-    
+
     <!-- Commit Modal -->
     <div id="commit-modal" class="hidden">
         <div class="modal-content">
             <h3>Commit Changes</h3>
-            <textarea id="commit-message" placeholder="Enter commit message..."></textarea>
+            <div class="form-group">
+                <label for="commit-message">Commit Message:</label>
+                <textarea id="commit-message" placeholder="Enter commit message..." class="form-input" required></textarea>
+                <div id="commit-message-error" class="error-message hidden">Commit message is required</div>
+                <div class="character-count">
+                    <span id="commit-message-count">0</span>/72 characters
+                </div>
+            </div>
             <div class="modal-buttons">
-                <button id="cancel-commit">Cancel</button>
-                <button id="confirm-commit">Commit</button>
+                <button id="cancel-commit" class="btn-secondary">Cancel</button>
+                <button id="confirm-commit" class="btn-primary" disabled>Commit</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Branch Modal -->
+    <div id="branch-modal" class="hidden">
+        <div class="modal-content">
+            <h3 id="branch-modal-title">Switch Branch</h3>
+            <div class="form-group">
+                <label for="branch-select">Select Branch:</label>
+                <select id="branch-select">
+                    <option value="">Loading branches...</option>
+                </select>
+            </div>
+            <div class="modal-buttons">
+                <button id="cancel-branch">Cancel</button>
+                <button id="confirm-branch">Switch</button>
             </div>
         </div>
     </div>
@@ -373,65 +383,72 @@
         </div>
     </div>
 
-    <!-- Debugging: Basic renderer initialization check -->
+    <!-- Custom commands list for dynamic rendering -->
+    <div id="custom-commands-list" class="hidden"></div>
+
+    <!-- Toast notification container -->
+    <div id="toast-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
     <script>
-        console.log('[DEBUG] HTML head loaded, renderer process starting...');
-        console.log('[DEBUG] DOM readyState:', document.readyState);
-        console.log('[DEBUG] Navigator userAgent:', navigator.userAgent);
-        console.log('[DEBUG] Process info:', {
-            type: typeof process !== 'undefined' ? process.type : 'undefined',
-            versions: typeof process !== 'undefined' ? process.versions : 'undefined',
-            nodeIntegration: typeof require !== 'undefined' ? 'enabled' : 'disabled'
+        // RIBBON TAB SWITCH
+        document.querySelectorAll('.ribbon-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Remove 'active' class from all tabs and hide all panels
+                document.querySelectorAll('.ribbon-tab').forEach(t => {
+                    t.classList.remove('active', 'bg-gray-700', 'text-white');
+                    t.classList.add('text-gray-400', 'hover:bg-gray-700');
+                });
+                document.querySelectorAll('.ribbon-panel').forEach(p => p.classList.add('hidden'));
+
+                // Add 'active' class to the clicked tab and show the corresponding panel
+                tab.classList.remove('text-gray-400', 'hover:bg-gray-700');
+                tab.classList.add('active', 'bg-gray-700', 'text-white');
+                document.getElementById(tab.dataset.target).classList.remove('hidden');
+            });
         });
 
-        // Test basic functionality
+        // THEME TOGGLE
+        const html = document.documentElement;
+        const themeToggle = document.getElementById('theme-toggle');
+        if (themeToggle) {
+            themeToggle.addEventListener('click', () => {
+                html.classList.toggle('dark');
+                const isDark = html.classList.contains('dark');
+                themeToggle.innerHTML = isDark
+                    ? '<i class="fas fa-moon text-blue-400"></i>'
+                    : '<i class="fas fa-sun text-yellow-400"></i>';
+            });
+        }
+
+        // Basic functionality check
         try {
-            if (typeof require !== 'undefined') {
-                console.log('[DEBUG] require() is available');
-                const { ipcRenderer } = require('electron');
-                console.log('[DEBUG] electron module loaded successfully');
-                console.log('[DEBUG] ipcRenderer available:', !!ipcRenderer);
-            } else {
-                console.error('[DEBUG] require() is NOT available - nodeIntegration issue');
+            if (typeof require === 'undefined') {
+                console.error('NodeIntegration is not enabled');
             }
         } catch (error) {
-            console.error('[DEBUG] Error testing basic functionality:', error);
+            console.error('Error initializing renderer:', error);
         }
     </script>
 
-    <script src="../dist/renderer/vendor.bundle.js"
-            onload="console.log('[DEBUG] vendor.bundle.js loaded successfully')"
-            onerror="console.error('[DEBUG] FAILED to load vendor.bundle.js', event)"></script>
-    <script src="../dist/renderer/app.bundle.js"
-            onload="console.log('[DEBUG] app.bundle.js loaded successfully')"
-            onerror="console.error('[DEBUG] FAILED to load app.bundle.js', event)"></script>
+    <script src="../dist/renderer/vendor.bundle.js"></script>
+    <script src="../dist/renderer/app.bundle.js"></script>
 
-    <!-- Additional debugging script to track bundle execution -->
     <script>
-        console.log('[DEBUG] All script tags processed');
         window.addEventListener('DOMContentLoaded', () => {
-            console.log('[DEBUG] DOMContentLoaded fired in HTML');
+            // DOM content loaded
         });
 
         window.addEventListener('load', () => {
-            console.log('[DEBUG] window.load fired in HTML');
-            console.log('[DEBUG] window.EasyDebugApp available:', !!window.EasyDebugApp);
-            console.log('[DEBUG] window.easyDebugApp instance:', !!window.easyDebugApp);
+            // Page fully loaded
         });
 
         // Error handlers
         window.addEventListener('error', (event) => {
-            console.error('[DEBUG] Global error in renderer:', {
-                message: event.message,
-                filename: event.filename,
-                lineno: event.lineno,
-                colno: event.colno,
-                error: event.error
-            });
+            console.error('Global error in renderer:', event.message);
         });
 
         window.addEventListener('unhandledrejection', (event) => {
-            console.error('[DEBUG] Unhandled promise rejection in renderer:', event.reason);
+            console.error('Unhandled promise rejection in renderer:', event.reason);
         });
     </script>
 </body>

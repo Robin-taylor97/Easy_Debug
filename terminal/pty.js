@@ -16,21 +16,31 @@ class PtyManager {
       } else if (shell.includes('cmd')) {
         shellArgs = ['/k']; // Keep cmd open after commands
       }
+    } else {
+      // Unix-like systems
+      shellArgs = ['-i']; // Interactive mode
     }
 
     // Spawn the shell process
     let childProcess;
     try {
       childProcess = spawn(shell, shellArgs, {
-        cwd: cwd,
+        cwd: cwd || process.cwd(),
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, TERM: 'xterm-256color' },
+        env: {
+          ...process.env,
+          TERM: 'xterm-256color',
+          COLUMNS: '80',
+          LINES: '24'
+        },
         windowsHide: false,
         detached: false
       });
+
+      console.log(`Shell process spawned successfully: ${shell} (PID: ${childProcess.pid})`);
     } catch (error) {
       console.error('Failed to spawn shell:', error);
-      return PtyManager._createFallbackProcess(cwd);
+      throw new Error(`Failed to create shell process: ${error.message}`);
     }
 
     // Create our PTY-like interface
@@ -41,29 +51,10 @@ class PtyManager {
       _buffer: '',
 
       write(data) {
-
         if (childProcess && childProcess.stdin && childProcess.stdin.writable) {
           try {
-            // Echo input back to terminal for immediate feedback
-            if (data === '\r' || data === '\r\n') {
-              // Send command to shell
-              childProcess.stdin.write('\r\n');
-              // Echo newline back to terminal
-              ptyProcess._dataCallbacks.forEach(callback => {
-                callback('\r\n');
-              });
-            } else if (data === '\x7f') { // Backspace
-              // Echo backspace to terminal
-              ptyProcess._dataCallbacks.forEach(callback => {
-                callback('\b \b');
-              });
-            } else {
-              childProcess.stdin.write(data);
-              // Echo character back to terminal
-              ptyProcess._dataCallbacks.forEach(callback => {
-                callback(data);
-              });
-            }
+            // Send data directly to shell without echo
+            childProcess.stdin.write(data);
 
             // Ensure data is flushed immediately for interactive shell
             if (childProcess.stdin.flush) {
@@ -71,29 +62,27 @@ class PtyManager {
             }
           } catch (error) {
             console.error('Error writing to shell:', error);
+            // Notify callbacks of error
+            ptyProcess._dataCallbacks.forEach(callback => {
+              callback(`\r\n\x1b[31mError: ${error.message}\x1b[0m\r\n`);
+            });
           }
+        } else {
+          console.warn('Shell process not available for writing');
+          ptyProcess._dataCallbacks.forEach(callback => {
+            callback('\r\n\x1b[31mShell not ready\x1b[0m\r\n');
+          });
         }
       },
 
       onData(callback) {
         this._dataCallbacks.push(callback);
 
-        // Send welcome message and initial prompt
+        // Send welcome message
         setTimeout(() => {
           callback('\r\n\x1b[32mEasy Debug Terminal\x1b[0m\r\n');
-          callback(`\x1b[36m${shell} - ${cwd || process.cwd()}\x1b[0m\r\n\r\n`);
-
-          // Show initial prompt
-          if (isWindows) {
-            const currentDir = cwd || process.cwd();
-            const prompt = `${currentDir}>`;
-            callback(`\x1b[37m${prompt}\x1b[0m `);
-          } else {
-            const currentDir = cwd || process.cwd();
-            const shortDir = currentDir.split('/').pop() || currentDir;
-            const prompt = `${shortDir}$`;
-            callback(`\x1b[37m${prompt}\x1b[0m `);
-          }
+          callback(`\x1b[36mShell: ${shell} | Directory: ${cwd || process.cwd()}\x1b[0m\r\n`);
+          callback('\x1b[90mType commands below. Press Ctrl+C to interrupt running processes.\x1b[0m\r\n\r\n');
         }, 100);
       },
 
@@ -181,28 +170,6 @@ class PtyManager {
     return ptyProcess;
   }
 
-  // Fallback implementation if shell spawning fails
-  static _createFallbackProcess(cwd) {
-    return {
-      write(data) {
-        console.log('Fallback terminal input:', data);
-      },
-
-      onData(callback) {
-        setTimeout(() => {
-          callback('\r\n\x1b[33mTerminal Fallback Mode\x1b[0m\r\n');
-          callback('\x1b[31mShell process could not be started\x1b[0m\r\n');
-          callback(`\x1b[36mDirectory: ${cwd}\x1b[0m\r\n`);
-          callback('\x1b[37m> \x1b[0m');
-        }, 100);
-      },
-
-      onExit(callback) {},
-      resize(cols, rows) {},
-      kill() {},
-      get pid() { return null; }
-    };
-  }
 
   static getShell() {
     if (os.platform() === 'win32') {
